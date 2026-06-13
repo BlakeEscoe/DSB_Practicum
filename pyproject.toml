@@ -38,6 +38,10 @@ dependencies = [
 pandas = [
     "pandas>=1.5.0",
 ]
+
+[project.scripts]
+nflreadpy-ui = "nflreadpy.ui:main"
+
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",
