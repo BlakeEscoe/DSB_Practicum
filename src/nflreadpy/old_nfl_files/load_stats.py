@@ -5,7 +5,7 @@ from typing import Literal
 import polars as pl
 
 from .downloader import get_downloader
-from .utils_date import get_current_season
+from ..utils_date import get_current_season
 
 
 def _load_stats(
