@@ -8,7 +8,7 @@ import requests
 from tqdm import tqdm
 
 from ..cache import get_cache_manager
-from .config import DataFormat, get_config
+from ..config import DataFormat, get_config
 
 
 class NflverseDownloader:
