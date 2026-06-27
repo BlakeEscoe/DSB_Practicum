@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import polars as pl
 
-from .load_stats import load_player_stats
+from .old_nfl_files.load_stats import load_player_stats
 from .utils_date import get_current_season
 
 STAT_ALIASES: dict[str, str] = {
