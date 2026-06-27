@@ -10,7 +10,7 @@ from importlib.metadata import version
 __version__ = version("nflreadpy")
 
 from .cache import clear_cache
-from .datasets import (
+#from .datasets import (
     team_abbr_mapping,
     team_abbr_mapping_norelocate,
     player_name_mapping,
