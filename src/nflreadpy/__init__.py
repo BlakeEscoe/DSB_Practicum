@@ -15,26 +15,26 @@ from .cache import clear_cache
    # team_abbr_mapping_norelocate,
    # player_name_mapping,
 #)
-from .load_combine import load_combine
-from .load_contracts import load_contracts
-from .load_depth_charts import load_depth_charts
-from .load_draft_picks import load_draft_picks
-from .load_ffverse import load_ff_opportunity, load_ff_playerids, load_ff_rankings
-from .load_ftn_charting import load_ftn_charting
-from .load_injuries import load_injuries
-from .load_nextgen_stats import load_nextgen_stats
-from .load_officials import load_officials
-from .load_participation import load_participation
-from .load_pbp import load_pbp
-from .load_pfr_advstats import load_pfr_advstats
-from .load_players import load_players
-from .load_rosters import load_rosters
-from .load_rosters_weekly import load_rosters_weekly
-from .load_schedules import load_schedules
-from .load_snap_counts import load_snap_counts
-from .load_stats import load_player_stats, load_team_stats
-from .load_teams import load_teams
-from .load_trades import load_trades
+# from .load_combine import load_combine
+# from .load_contracts import load_contracts
+# from .load_depth_charts import load_depth_charts
+# from .load_draft_picks import load_draft_picks
+# from .load_ffverse import load_ff_opportunity, load_ff_playerids, load_ff_rankings
+# from .load_ftn_charting import load_ftn_charting
+# from .load_injuries import load_injuries
+# from .load_nextgen_stats import load_nextgen_stats
+# from .load_officials import load_officials
+# from .load_participation import load_participation
+# from .load_pbp import load_pbp
+# from .load_pfr_advstats import load_pfr_advstats
+# from .load_players import load_players
+# from .load_rosters import load_rosters
+# from .load_rosters_weekly import load_rosters_weekly
+# from .load_schedules import load_schedules
+# from .load_snap_counts import load_snap_counts
+# from .load_stats import load_player_stats, load_team_stats
+# from .load_teams import load_teams
+# from .load_trades import load_trades
 from .utils_date import get_current_season, get_current_week
 
 __all__ = [
