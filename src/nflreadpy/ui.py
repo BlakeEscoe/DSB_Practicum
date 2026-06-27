@@ -762,7 +762,7 @@ def render_page() -> str:
 </html>"""
 
 
-def run(host: str = "127.0.0.1", port: int = 8765) -> None:
+def run(host: str = "0.0.0.0", port: int = 8765) -> None:
     """Start the local nflreadpy UI server."""
     server = ThreadingHTTPServer((host, port), NflReadPyUIHandler)
     url = f"http://{host}:{port}"
@@ -778,7 +778,7 @@ def run(host: str = "127.0.0.1", port: int = 8765) -> None:
 def main() -> None:
     """CLI entrypoint for the local UI."""
     parser = argparse.ArgumentParser(description="Run the nflreadpy local stats UI.")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     run(host=args.host, port=args.port)
