@@ -7,46 +7,42 @@ team_stats = nfl.load_team_stats(seasons=True).to_pandas()
 schedules = nfl.load_schedules().to_pandas()
 contracts = nfl.load_contracts().to_pandas()
 
-player_stats.to_csv('player_stats.csv')
-team_stats.to_csv('team_stats.csv')
-schedules.to_csv('schedules.csv')
-contracts.to_csv('contracts.csv')
+player_stats.to_csv("data/player_stats.csv")
+team_stats.to_csv("data/team_stats.csv")
+schedules.to_csv("data/schedules.csv")
+contracts.to_csv("data/contracts.csv")
 
 player_contracts = player_stats.merge(
     contracts,
-    left_on=['player_display_name', 'season'],
-    right_on=['player', 'year_signed'],
+    left_on=["player_display_name", "season"],
+    right_on=["player", "year_signed"],
     how="left",
-    suffixes=("_player_stats", "_contract")
+    suffixes=("_player_stats", "_contract"),
 )
 
-player_contracts.to_csv('player_contracts.csv')
+player_contracts.to_csv("data/player_contracts.csv")
 
 main_df = player_contracts.merge(
     schedules,
-    left_on=['season', 'week', 'team_player_stats'],
-    right_on=['season', 'week', 'home_team'],
+    left_on=["season", "week", "team_player_stats"],
+    right_on=["season", "week", "home_team"],
     how="left",
-    suffixes=("_player_stats", "_home_team")
+    suffixes=("_player_stats", "_home_team"),
 )
 
 main_df = main_df.merge(
     schedules,
-    left_on=['season', 'week', 'team_player_stats'],
-    right_on=['season', 'week', 'away_team'],
+    left_on=["season", "week", "team_player_stats"],
+    right_on=["season", "week", "away_team"],
     how="left",
-    suffixes=("_player_stats", "_away_team")
+    suffixes=("_player_stats", "_away_team"),
 )
 
-main_df = main_df.to_csv('main_df.csv')
+main_df.to_csv("data/main_df.csv", index=False)
 
-home_games = schedules[
-    ["season", "home_team"]
-].rename(columns={"home_team": "team"})
+home_games = schedules[["season", "home_team"]].rename(columns={"home_team": "team"})
 
-away_games = schedules[
-    ["season", "away_team"]
-].rename(columns={"away_team": "team"})
+away_games = schedules[["season", "away_team"]].rename(columns={"away_team": "team"})
 
 team_schedule = (
     pd.concat([home_games, away_games])
@@ -56,14 +52,9 @@ team_schedule = (
 )
 
 
-team_info = team_stats.merge(
-    team_schedule,
-    on=["season", "team"],
-    how="left"
-)
+team_info = team_stats.merge(team_schedule, on=["season", "team"], how="left")
 
-
-
+main_df.head()
 
 
 """

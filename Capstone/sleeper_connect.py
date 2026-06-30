@@ -38,6 +38,23 @@ def get_leagues(user_id, season=2026):
         return league_info
 
 
+def get_all_rosters(league_id):
+    # this method returns the roster of a given league
+    url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
+    response = requests.get(url)
+    if response.status_code in sleeper_error_codes:
+        return sleeper_error_codes[response.status_code]
+    elif response.json() == None:
+        return f"Error {response.status_code}: Roster not found"
+    else:
+        return response.json()
+
+
+"""code below is to test the shit"""
+user_id = get_user_id("brulism")
+get_leagues(user_id)
+get_all_rosters(1372973263004663808)
+
 """
 what do we need for sleeper?
 1. username (we can get their user_id and, in turn, their league id from this.
