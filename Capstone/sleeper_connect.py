@@ -3,15 +3,22 @@ import pandas as pd
 from pathlib import Path
 import re
 
-
+"""
 def load_main_dataset():
-    project_root = Path.cwd()
-    data_path = project_root / "data" / "main_df.csv"
+    capstone_dir = Path(__file__).resolve().parent
+    data_path = capstone_dir / "data" / "main_df.csv"
 
     print(data_path)
     print(data_path.exists())
 
-    return pd.read_csv(data_path)
+    return pd.read_csv(data_path)"""
+
+CAPSTONE_DIR = Path(__file__).resolve().parent
+DATA_DIR = CAPSTONE_DIR / "data"
+
+
+def load_main_dataset():
+    return pd.read_csv(DATA_DIR / "main_df.csv")
 
 
 sleeper_error_codes = {
@@ -203,9 +210,6 @@ if "loose_key" in final_df.columns:
 
 total = len(final_df)
 matched = final_df["sleeper_id"].notna().sum()
-print(
-    f"New Cascade Match Rate: {matched}/{total} players ({(matched / total) * 100:.2f}%)"
-)
 
 # final_df.to_csv("data/main_players_with_sleeper_ids.csv", index=False)
 
@@ -228,7 +232,8 @@ main_df = main_df.merge(
     how="left",
 )
 
-main_df.to_csv("data/main_df_with_sleeper_ids.csv", index=False)
+output_path = DATA_DIR / "main_df_with_sleeper_ids.csv"
+main_df.to_csv(output_path, index=False)
 
 """
 what do we need for sleeper?
