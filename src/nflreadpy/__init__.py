@@ -10,6 +10,11 @@ from importlib.metadata import version
 __version__ = version("nflreadpy")
 
 from .cache import clear_cache
+from .old_nfl_files.load_stats import load_player_stats, load_team_stats
+from .old_nfl_files.load_schedules import load_schedules
+from .old_nfl_files.load_contracts import load_contracts
+
+from .utils_date import get_current_season, get_current_week
 #from .datasets import (
    # team_abbr_mapping,
    # team_abbr_mapping_norelocate,
