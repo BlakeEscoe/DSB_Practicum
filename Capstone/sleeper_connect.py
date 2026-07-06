@@ -119,138 +119,139 @@ def create_composite_key(df, name_col, pos_col, team_col):
     return cleaned_name + "_" + pos + "_" + team
 
 
-"""code below is to test the shit"""
-sleeper_ids = pd.DataFrame(sort_player_ids())
-sleeper_ids = sleeper_ids.rename(columns={"player_id": "sleeper_id"})
-main_df = load_main_dataset()
+if __name__ == "__main__":
+    """code below is to test the shit"""
+    sleeper_ids = pd.DataFrame(sort_player_ids())
+    sleeper_ids = sleeper_ids.rename(columns={"player_id": "sleeper_id"})
+    main_df = load_main_dataset()
 
-# Make copies so you don't accidentally mess up originals
-main = main_df.copy()
-sleeper = sleeper_ids.copy()
+    # Make copies so you don't accidentally mess up originals
+    main = main_df.copy()
+    sleeper = sleeper_ids.copy()
 
-# CLEAN THE MAIN DATASET
-main.dropna(subset=["player_id"], inplace=True)  # drop the 530 nulls
-# main.drop_duplicates(subset=['player_id'], inplace=True) #drop the 507692 duplicates, leaving 11025 unique players
-main["gsis_id"] = main["gsis_id"].astype("string").str.strip()
-sleeper["gsis_id"] = sleeper["gsis_id"].astype("string").str.strip()
+    # CLEAN THE MAIN DATASET
+    main.dropna(subset=["player_id"], inplace=True)  # drop the 530 nulls
+    # main.drop_duplicates(subset=['player_id'], inplace=True) #drop the 507692 duplicates, leaving 11025 unique players
+    main["gsis_id"] = main["gsis_id"].astype("string").str.strip()
+    sleeper["gsis_id"] = sleeper["gsis_id"].astype("string").str.strip()
 
-main["gsis_id"] = main["gsis_id"].replace("", pd.NA)
-sleeper["gsis_id"] = sleeper["gsis_id"].replace("", pd.NA)
+    main["gsis_id"] = main["gsis_id"].replace("", pd.NA)
+    sleeper["gsis_id"] = sleeper["gsis_id"].replace("", pd.NA)
 
-main_players = (
-    main[
-        [
-            "player_id",
-            "team_player_stats",
-            "player_name",
-            "player_display_name",
-            "position_player_stats",
-            "gsis_id",
+    main_players = (
+        main[
+            [
+                "player_id",
+                "team_player_stats",
+                "player_name",
+                "player_display_name",
+                "position_player_stats",
+                "gsis_id",
+            ]
         ]
-    ]
-    .dropna(subset=["player_id"])
-    .drop_duplicates(subset=["player_id"])
-    .copy()
-)
+        .dropna(subset=["player_id"])
+        .drop_duplicates(subset=["player_id"])
+        .copy()
+    )
 
-sleeper_clean = sleeper[sleeper["player_name"] != "Duplicate Player"]
+    sleeper_clean = sleeper[sleeper["player_name"] != "Duplicate Player"]
 
-main_players["composite_key"] = create_composite_key(
-    main_players, "player_display_name", "position_player_stats", "team_player_stats"
-)
-sleeper_clean["composite_key"] = create_composite_key(
-    sleeper_clean, "player_name", "position", "team"
-)
+    main_players["composite_key"] = create_composite_key(
+        main_players, "player_display_name", "position_player_stats", "team_player_stats"
+    )
+    sleeper_clean["composite_key"] = create_composite_key(
+        sleeper_clean, "player_name", "position", "team"
+    )
 
-main_players.dropna(subset=["composite_key"], inplace=True)
+    main_players.dropna(subset=["composite_key"], inplace=True)
 
 
-# Join Sleeper IDs onto the main stats dataset
-merged_df = main_players.merge(
-    sleeper_clean[["sleeper_id", "player_name", "position", "team", "composite_key"]],
-    on="composite_key",
-    how="left",
-    suffixes=("_main", "_sleeper"),
-)
-##################
+    # Join Sleeper IDs onto the main stats dataset
+    merged_df = main_players.merge(
+        sleeper_clean[["sleeper_id", "player_name", "position", "team", "composite_key"]],
+        on="composite_key",
+        how="left",
+        suffixes=("_main", "_sleeper"),
+    )
+    ##################
 
-# --- STEP 1: Build the 'loose_key' on the raw dataframes first ---
-# This slices off the team portion (e.g. 'joshallen_qb_buf' becomes 'joshallen_qb')
-main_players["loose_key"] = main_players["composite_key"].apply(
-    lambda x: "_".join(x.split("_")[:-1]) if pd.notna(x) else x
-)
-sleeper_clean["loose_key"] = sleeper_clean["composite_key"].apply(
-    lambda x: "_".join(x.split("_")[:-1]) if pd.notna(x) else x
-)
+    # --- STEP 1: Build the 'loose_key' on the raw dataframes first ---
+    # This slices off the team portion (e.g. 'joshallen_qb_buf' becomes 'joshallen_qb')
+    main_players["loose_key"] = main_players["composite_key"].apply(
+        lambda x: "_".join(x.split("_")[:-1]) if pd.notna(x) else x
+    )
+    sleeper_clean["loose_key"] = sleeper_clean["composite_key"].apply(
+        lambda x: "_".join(x.split("_")[:-1]) if pd.notna(x) else x
+    )
 
-# --- STEP 2: Re-run your strict merge to get a clean baseline dataframe ---
-merged_df = main_players.merge(
-    sleeper_clean[["composite_key", "sleeper_id"]], on="composite_key", how="left"
-)
+    # --- STEP 2: Re-run your strict merge to get a clean baseline dataframe ---
+    merged_df = main_players.merge(
+        sleeper_clean[["composite_key", "sleeper_id"]], on="composite_key", how="left"
+    )
 
-# --- STEP 3: Separate the successes from the failures ---
-# Those that matched successfully via strict key
-matched_strict = merged_df[merged_df["sleeper_id"].notna()]
+    # --- STEP 3: Separate the successes from the failures ---
+    # Those that matched successfully via strict key
+    matched_strict = merged_df[merged_df["sleeper_id"].notna()]
 
-# Those that failed (sleeper_id is NaN)
-failed_strict = merged_df[merged_df["sleeper_id"].isna()].drop(columns=["sleeper_id"])
+    # Those that failed (sleeper_id is NaN)
+    failed_strict = merged_df[merged_df["sleeper_id"].isna()].drop(columns=["sleeper_id"])
 
-# --- STEP 4: Merge the failures on the 'loose_key' ---
-# Pulling 'player_id' out of sleeper_clean and renaming it right away
-matched_loose = failed_strict.merge(
-    sleeper_clean[["loose_key", "sleeper_id"]], on="loose_key", how="left"
-)
+    # --- STEP 4: Merge the failures on the 'loose_key' ---
+    # Pulling 'player_id' out of sleeper_clean and renaming it right away
+    matched_loose = failed_strict.merge(
+        sleeper_clean[["loose_key", "sleeper_id"]], on="loose_key", how="left"
+    )
 
-# --- STEP 5: Concatenate them back into a single final dataframe ---
-final_df = pd.concat([matched_strict, matched_loose], ignore_index=True)
+    # --- STEP 5: Concatenate them back into a single final dataframe ---
+    final_df = pd.concat([matched_strict, matched_loose], ignore_index=True)
 
-# --- STEP 6: Drop the temporary tracking key and view the new metrics ---
-if "loose_key" in final_df.columns:
-    final_df = final_df.drop(columns=["loose_key"])
+    # --- STEP 6: Drop the temporary tracking key and view the new metrics ---
+    if "loose_key" in final_df.columns:
+        final_df = final_df.drop(columns=["loose_key"])
 
-total = len(final_df)
-matched = final_df["sleeper_id"].notna().sum()
+    total = len(final_df)
+    matched = final_df["sleeper_id"].notna().sum()
 
-# final_df.to_csv("data/main_players_with_sleeper_ids.csv", index=False)
+    # final_df.to_csv("data/main_players_with_sleeper_ids.csv", index=False)
 
-print("Matched in final_df:", final_df["sleeper_id"].notna().sum())
-print("Total rows in final_df:", len(final_df))
+    print("Matched in final_df:", final_df["sleeper_id"].notna().sum())
+    print("Total rows in final_df:", len(final_df))
 
-# 1. Strip the temporary 'composite_key' if it exists in final_df to keep it clean
-main_df["player_id"] = main_df["player_id"].astype(str).str.strip()
-final_df["player_id"] = final_df["player_id"].astype(str).str.strip()
+    # 1. Strip the temporary 'composite_key' if it exists in final_df to keep it clean
+    main_df["player_id"] = main_df["player_id"].astype(str).str.strip()
+    final_df["player_id"] = final_df["player_id"].astype(str).str.strip()
 
-# Keep only player_id and sleeper_id for merging back
-final_df_clean = (
-    final_df[["player_id", "sleeper_id"]]
-    .dropna(subset=["sleeper_id"])
-    .drop_duplicates(subset=["player_id"])
-)
+    # Keep only player_id and sleeper_id for merging back
+    final_df_clean = (
+        final_df[["player_id", "sleeper_id"]]
+        .dropna(subset=["sleeper_id"])
+        .drop_duplicates(subset=["player_id"])
+    )
 
-# Merge sleeper_id back into full main_df
-main_df = main_df.merge(
-    final_df_clean,
-    on="player_id",
-    how="left",
-)
+    # Merge sleeper_id back into full main_df
+    main_df = main_df.merge(
+        final_df_clean,
+        on="player_id",
+        how="left",
+    )
 
-# print("Rows in main_df:", len(main_df))
-# print("Matched after merge:", main_df["sleeper_id"].notna().sum())
+    # print("Rows in main_df:", len(main_df))
+    # print("Matched after merge:", main_df["sleeper_id"].notna().sum())
 
-# print(main_df["sleeper_id"].dtype)
+    # print(main_df["sleeper_id"].dtype)
 
-# print(sleeper_clean["sleeper_id"].dtype)
-# print(sleeper_clean["sleeper_id"].head())
+    # print(sleeper_clean["sleeper_id"].dtype)
+    # print(sleeper_clean["sleeper_id"].head())
 
-output_path = DATA_DIR / "main_df_with_sleeper_ids.csv"
+    output_path = DATA_DIR / "main_df_with_sleeper_ids.csv"
 
-main_df["sleeper_id"] = (
-    pd.to_numeric(main_df["sleeper_id"], errors="coerce")
-    .astype("Int64")
-    .astype("string")
-)
+    main_df["sleeper_id"] = (
+        pd.to_numeric(main_df["sleeper_id"], errors="coerce")
+        .astype("Int64")
+        .astype("string")
+    )
 
-main_df.to_csv(output_path, index=False)
+    main_df.to_csv(output_path, index=False)
 
 """
 what do we need for sleeper?
