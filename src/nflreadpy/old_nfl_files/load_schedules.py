@@ -3,7 +3,7 @@
 import polars as pl
 
 from .downloader import get_downloader
-from .utils_date import get_current_season
+from ..utils_date import get_current_season
 
 
 def load_schedules(seasons: int | list[int] | bool | None = True) -> pl.DataFrame:
