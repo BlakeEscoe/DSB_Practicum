@@ -1,16 +1,41 @@
 import streamlit as st
 from sleeper_connect import get_user_id, get_leagues, get_all_rosters
+import pandas as pd
+from pathlib import Path
 
 st.set_page_config(page_title="Fantasy Football Predictor", layout="wide")
 
-st.title("Fantasy Football Expected Points Predictor")
+DATA_DIR = Path(__file__).resolve().parent / "data"
 
-st.write(
-    "Enter your Sleeper username to find your fantasy leagues and view roster data."
+players_df = pd.read_csv(DATA_DIR / "main_df_with_sleeper_ids.csv")
+players_df["sleeper_id"] = (
+    pd.to_numeric(players_df["sleeper_id"], errors="coerce")
+    .astype("Int64")
+    .astype("string")
 )
 
-username = st.text_input("Sleeper Username")
 
+player_lookup = (
+    players_df[
+        [
+            "sleeper_id",
+            "player_display_name",
+            "position_player_stats",
+            "team_player_stats",
+        ]
+    ]
+    .dropna(subset=["sleeper_id"])
+    .drop_duplicates("sleeper_id")
+    .set_index("sleeper_id")
+    .to_dict("index")
+)
+
+
+st.title("Fantasy Football Expected Points Predictor")
+
+st.write("Enter your Sleeper username to find your fantasy leagues and view roster data.")
+
+username = st.text_input("Sleeper Username")
 season = st.selectbox("Season", [2026, 2025, 2024], index=0)
 
 if st.button("Find My Leagues"):
@@ -38,7 +63,6 @@ if "leagues" in st.session_state:
     leagues = st.session_state["leagues"]
 
     selected_league_name = st.selectbox("Select a league", list(leagues.keys()))
-
     selected_league_id = leagues[selected_league_name]
 
     st.write("Selected League ID:", selected_league_id)
@@ -50,4 +74,54 @@ if "leagues" in st.session_state:
             st.error(rosters)
         else:
             st.subheader("League Rosters")
-            st.json(rosters)
+
+            for i, roster in enumerate(rosters):
+                st.markdown(f"## Team {i + 1}")
+
+                owner = roster.get("owner_id", "Unknown")
+                st.caption(f"Owner ID: {owner}")
+
+                players = []
+
+                for sleeper_id in roster.get("players", []):
+                    sleeper_id_str = str(sleeper_id)
+
+                    # Handle Team Defense (DST)
+                    if sleeper_id_str.isalpha():
+                        players.append(
+                            {
+                                "Player": f"{sleeper_id_str} Defense",
+                                "Position": "DEF",
+                                "Team": sleeper_id_str,
+                                "Sleeper ID": sleeper_id_str,
+                            }
+                        )
+
+                    # Handle regular players
+                    else:
+                        info = player_lookup.get(sleeper_id_str, {})
+
+                        players.append(
+                            {
+                                "Player": info.get(
+                                    "player_display_name", "Unknown"
+                                ),
+                                "Position": info.get(
+                                    "position_player_stats", ""
+                                ),
+                                "Team": info.get(
+                                    "team_player_stats", ""
+                                ),
+                                "Sleeper ID": sleeper_id_str,
+                            }
+                        )
+
+                roster_df = pd.DataFrame(players)
+
+                st.dataframe(
+                    roster_df,
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+                st.divider()

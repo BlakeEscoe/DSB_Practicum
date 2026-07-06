@@ -213,26 +213,43 @@ matched = final_df["sleeper_id"].notna().sum()
 
 # final_df.to_csv("data/main_players_with_sleeper_ids.csv", index=False)
 
-# 1. Strip the temporary 'composite_key' if it exists in final_df to keep it clean
-if "composite_key" in final_df.columns:
-    final_df_clean = final_df[
-        ["player_name", "position_player_stats", "team_player_stats", "sleeper_id"]
-    ].drop_duplicates()
-else:
-    # Use whatever unique columns define a player row in your final_df
-    final_df_clean = final_df[
-        ["player_name", "position_player_stats", "team_player_stats", "sleeper_id"]
-    ].drop_duplicates()
+print("Matched in final_df:", final_df["sleeper_id"].notna().sum())
+print("Total rows in final_df:", len(final_df))
 
-# 2. Merge the sleeper_id back into your main stats dataframe
-# Change 'player_name', 'position', 'team' to match the exact column names in your main_df
+# 1. Strip the temporary 'composite_key' if it exists in final_df to keep it clean
+main_df["player_id"] = main_df["player_id"].astype(str).str.strip()
+final_df["player_id"] = final_df["player_id"].astype(str).str.strip()
+
+# Keep only player_id and sleeper_id for merging back
+final_df_clean = (
+    final_df[["player_id", "sleeper_id"]]
+    .dropna(subset=["sleeper_id"])
+    .drop_duplicates(subset=["player_id"])
+)
+
+# Merge sleeper_id back into full main_df
 main_df = main_df.merge(
     final_df_clean,
-    on=["player_name", "position_player_stats", "team_player_stats"],
+    on="player_id",
     how="left",
 )
 
+# print("Rows in main_df:", len(main_df))
+# print("Matched after merge:", main_df["sleeper_id"].notna().sum())
+
+# print(main_df["sleeper_id"].dtype)
+
+# print(sleeper_clean["sleeper_id"].dtype)
+# print(sleeper_clean["sleeper_id"].head())
+
 output_path = DATA_DIR / "main_df_with_sleeper_ids.csv"
+
+main_df["sleeper_id"] = (
+    pd.to_numeric(main_df["sleeper_id"], errors="coerce")
+    .astype("Int64")
+    .astype("string")
+)
+
 main_df.to_csv(output_path, index=False)
 
 """
