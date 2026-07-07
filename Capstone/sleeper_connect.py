@@ -30,6 +30,17 @@ sleeper_error_codes = {
 }
 
 
+def get_user_name(user_id):
+    url = f"https://api.sleeper.app/v1/user/{user_id}"
+    response = requests.get(url)
+    if response.status_code in sleeper_error_codes:
+        return sleeper_error_codes[response.status_code]
+    elif response.json() == None:
+        return f"Error {response.status_code}: User not found"
+    else:
+        return response.json()["display_name"]
+
+
 def get_user_id(username):
     # this method returns the user_id based on an entered username
     # test using my sleeper username: brulism
@@ -157,7 +168,10 @@ if __name__ == "__main__":
     sleeper_clean = sleeper[sleeper["player_name"] != "Duplicate Player"]
 
     main_players["composite_key"] = create_composite_key(
-        main_players, "player_display_name", "position_player_stats", "team_player_stats"
+        main_players,
+        "player_display_name",
+        "position_player_stats",
+        "team_player_stats",
     )
     sleeper_clean["composite_key"] = create_composite_key(
         sleeper_clean, "player_name", "position", "team"
@@ -165,10 +179,11 @@ if __name__ == "__main__":
 
     main_players.dropna(subset=["composite_key"], inplace=True)
 
-
     # Join Sleeper IDs onto the main stats dataset
     merged_df = main_players.merge(
-        sleeper_clean[["sleeper_id", "player_name", "position", "team", "composite_key"]],
+        sleeper_clean[
+            ["sleeper_id", "player_name", "position", "team", "composite_key"]
+        ],
         on="composite_key",
         how="left",
         suffixes=("_main", "_sleeper"),
@@ -194,7 +209,9 @@ if __name__ == "__main__":
     matched_strict = merged_df[merged_df["sleeper_id"].notna()]
 
     # Those that failed (sleeper_id is NaN)
-    failed_strict = merged_df[merged_df["sleeper_id"].isna()].drop(columns=["sleeper_id"])
+    failed_strict = merged_df[merged_df["sleeper_id"].isna()].drop(
+        columns=["sleeper_id"]
+    )
 
     # --- STEP 4: Merge the failures on the 'loose_key' ---
     # Pulling 'player_id' out of sleeper_clean and renaming it right away

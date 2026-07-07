@@ -1,5 +1,11 @@
 import streamlit as st
-from sleeper_connect import get_user_id, get_leagues, get_all_rosters
+from sleeper_connect import (
+    get_user_id,
+    get_leagues,
+    get_all_rosters,
+    get_user_name,
+    nfl_player_ids,
+)
 import pandas as pd
 from pathlib import Path
 
@@ -7,33 +13,127 @@ st.set_page_config(page_title="Fantasy Football Predictor", layout="wide")
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
-players_df = pd.read_csv(DATA_DIR / "main_df_with_sleeper_ids.csv")
-players_df["sleeper_id"] = (
-    pd.to_numeric(players_df["sleeper_id"], errors="coerce")
-    .astype("Int64")
-    .astype("string")
-)
 
-
-player_lookup = (
-    players_df[
-        [
+@st.cache_data
+def load_player_lookup():
+    players_df = pd.read_csv(
+        DATA_DIR / "main_df_with_sleeper_ids.csv",
+        usecols=[
             "sleeper_id",
             "player_display_name",
             "position_player_stats",
             "team_player_stats",
-        ]
-    ]
-    .dropna(subset=["sleeper_id"])
-    .drop_duplicates("sleeper_id")
-    .set_index("sleeper_id")
-    .to_dict("index")
-)
+        ],
+    )
+    players_df["sleeper_id"] = (
+        pd.to_numeric(players_df["sleeper_id"], errors="coerce")
+        .astype("Int64")
+        .astype("string")
+    )
+
+    return (
+        players_df.dropna(subset=["sleeper_id"])
+        .drop_duplicates("sleeper_id")
+        .set_index("sleeper_id")
+        .to_dict("index")
+    )
+
+
+@st.cache_data
+def cached_user_name(user_id):
+    return get_user_name(user_id)
+
+
+@st.cache_data
+def load_sleeper_player_lookup():
+    sleeper_players = nfl_player_ids()
+
+    if isinstance(sleeper_players, str) and sleeper_players.startswith("Error"):
+        return {}
+
+    return {
+        str(player_id): {
+            "player_display_name": player_info.get("full_name", "Unknown"),
+            "position_player_stats": player_info.get("position", ""),
+            "team_player_stats": player_info.get("team", ""),
+        }
+        for player_id, player_info in sleeper_players.items()
+    }
+
+
+def build_roster_df(roster):
+    player_lookup = load_player_lookup()
+    sleeper_player_lookup = load_sleeper_player_lookup()
+    starter_ids = {
+        str(sleeper_id)
+        for sleeper_id in roster.get("starters", [])
+        if sleeper_id is not None
+    }
+    players = []
+
+    for sleeper_id in roster.get("players", []) or []:
+        sleeper_id_str = str(sleeper_id)
+        lineup_status = "Starter" if sleeper_id_str in starter_ids else "Bench"
+
+        # Handle Team Defense (DST)
+        if sleeper_id_str.isalpha():
+            players.append(
+                {
+                    "Lineup": lineup_status,
+                    "Player": f"{sleeper_id_str} Defense",
+                    "Position": "DEF",
+                    "Team": sleeper_id_str,
+                    "Sleeper ID": sleeper_id_str,
+                }
+            )
+
+        # Handle regular players
+        else:
+            info = player_lookup.get(sleeper_id_str) or sleeper_player_lookup.get(
+                sleeper_id_str, {}
+            )
+
+            players.append(
+                {
+                    "Lineup": lineup_status,
+                    "Player": info.get("player_display_name", "Unknown"),
+                    "Position": info.get("position_player_stats", ""),
+                    "Team": info.get("team_player_stats", ""),
+                    "Sleeper ID": sleeper_id_str,
+                }
+            )
+
+    roster_df = pd.DataFrame(players)
+
+    if roster_df.empty:
+        return roster_df
+
+    roster_df["Lineup Order"] = roster_df["Lineup"].map({"Starter": 0, "Bench": 1})
+
+    return (
+        roster_df.sort_values(["Lineup Order", "Position", "Player"])
+        .drop(columns="Lineup Order")
+        .reset_index(drop=True)
+    )
+
+
+def show_roster(roster):
+    owner = roster.get("owner_id", "Unknown")
+    owner_name = cached_user_name(owner) if owner != "Unknown" else "Unknown"
+    st.caption(f"Fantasy General Manager: {owner_name}")
+
+    st.dataframe(
+        build_roster_df(roster),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 st.title("Fantasy Football Expected Points Predictor")
 
-st.write("Enter your Sleeper username to find your fantasy leagues and view roster data.")
+st.write(
+    "Enter your Sleeper username to find your fantasy leagues and view roster data."
+)
 
 username = st.text_input("Sleeper Username")
 season = st.selectbox("Season", [2026, 2025, 2024], index=0)
@@ -73,55 +173,31 @@ if "leagues" in st.session_state:
         if isinstance(rosters, str) and rosters.startswith("Error"):
             st.error(rosters)
         else:
-            st.subheader("League Rosters")
+            st.session_state["rosters"] = rosters
 
-            for i, roster in enumerate(rosters):
-                st.markdown(f"## Team {i + 1}")
+    if "rosters" in st.session_state:
+        rosters = st.session_state["rosters"]
+        user_id = st.session_state.get("user_id")
 
-                owner = roster.get("owner_id", "Unknown")
-                st.caption(f"Owner ID: {owner}")
+        st.subheader("League Rosters")
 
-                players = []
+        user_roster = None
+        other_rosters = []
 
-                for sleeper_id in roster.get("players", []):
-                    sleeper_id_str = str(sleeper_id)
+        for roster in rosters:
+            if roster.get("owner_id") == user_id:
+                user_roster = roster
+            else:
+                other_rosters.append(roster)
 
-                    # Handle Team Defense (DST)
-                    if sleeper_id_str.isalpha():
-                        players.append(
-                            {
-                                "Player": f"{sleeper_id_str} Defense",
-                                "Position": "DEF",
-                                "Team": sleeper_id_str,
-                                "Sleeper ID": sleeper_id_str,
-                            }
-                        )
+        if user_roster:
+            st.markdown("## Your Team")
+            show_roster(user_roster)
+            st.divider()
 
-                    # Handle regular players
-                    else:
-                        info = player_lookup.get(sleeper_id_str, {})
+        for i, roster in enumerate(other_rosters):
+            owner = roster.get("owner_id", "Unknown")
+            owner_name = cached_user_name(owner) if owner != "Unknown" else "Unknown"
 
-                        players.append(
-                            {
-                                "Player": info.get(
-                                    "player_display_name", "Unknown"
-                                ),
-                                "Position": info.get(
-                                    "position_player_stats", ""
-                                ),
-                                "Team": info.get(
-                                    "team_player_stats", ""
-                                ),
-                                "Sleeper ID": sleeper_id_str,
-                            }
-                        )
-
-                roster_df = pd.DataFrame(players)
-
-                st.dataframe(
-                    roster_df,
-                    hide_index=True,
-                    use_container_width=True,
-                )
-
-                st.divider()
+            with st.expander(f"Reveal Team {owner_name}"):
+                show_roster(roster)
