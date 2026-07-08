@@ -122,14 +122,41 @@ def show_roster(roster):
     owner_name = cached_user_name(owner) if owner != "Unknown" else "Unknown"
     st.caption(f"Fantasy General Manager: {owner_name}")
 
-    st.dataframe(
-        build_roster_df(roster),
-        hide_index=True,
-        use_container_width=True,
-    )
+    roster_df = build_roster_df(roster)
+
+    if roster_df.empty:
+        st.info("No roster players found.")
+        return
+
+    starter_df = roster_df[roster_df["Lineup"] == "Starter"].drop(columns="Lineup")
+    bench_df = roster_df[roster_df["Lineup"] == "Bench"].drop(columns="Lineup")
+
+    with st.expander(f"Active Roster ({len(starter_df)})", expanded=True):
+        st.dataframe(
+            starter_df,
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    with st.expander(f"Bench Players ({len(bench_df)})"):
+        if bench_df.empty:
+            st.caption("No bench players found.")
+        else:
+            st.dataframe(
+                bench_df,
+                hide_index=True,
+                use_container_width=True,
+            )
 
 
-st.title("Fantasy Football Expected Points Predictor")
+st.title("Fantasy Pathfinder")
+
+st.markdown(
+    """
+    <hr style="border: 1px solid #ccc;">
+    """,
+    unsafe_allow_html=True,
+)
 
 st.write(
     "Enter your Sleeper username to find your fantasy leagues and view roster data."
@@ -199,5 +226,5 @@ if "leagues" in st.session_state:
             owner = roster.get("owner_id", "Unknown")
             owner_name = cached_user_name(owner) if owner != "Unknown" else "Unknown"
 
-            with st.expander(f"Reveal Team {owner_name}"):
+            with st.expander(f"Team {owner_name}"):
                 show_roster(roster)
