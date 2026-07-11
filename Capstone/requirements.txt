@@ -7,3 +7,24 @@ polars
 pyarrow
 nflreadpy
 scikit-learn
+annotated-types==0.7.0
+certifi==2026.6.17
+charset-normalizer==3.4.9
+idna==3.18
+-e git+https://github.com/deziharris6-cloud/DSB_7500_Practicum.git@0500162f282c78796960bac1a2b85ff351b20057#egg=nflreadpy
+numpy==2.5.1
+pandas==3.0.3
+platformdirs==4.10.0
+polars==1.42.1
+polars-runtime-32==1.42.1
+pydantic==2.13.4
+pydantic-settings==2.14.2
+pydantic_core==2.46.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+requests==2.34.2
+six==1.17.0
+tqdm==4.68.4
+typing-inspection==0.4.2
+typing_extensions==4.16.0
+urllib3==2.7.0
