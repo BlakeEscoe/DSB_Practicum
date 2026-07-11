@@ -7,10 +7,10 @@ team_stats = nfl.load_team_stats(seasons=True).to_pandas()
 schedules = nfl.load_schedules().to_pandas()
 contracts = nfl.load_contracts().to_pandas()
 
-player_stats.to_csv("data/player_stats.csv")
-team_stats.to_csv("data/team_stats.csv")
-schedules.to_csv("data/schedules.csv")
-contracts.to_csv("data/contracts.csv")
+player_stats.to_csv("player_stats.csv")
+team_stats.to_csv("team_stats.csv")
+schedules.to_csv("schedules.csv")
+contracts.to_csv("contracts.csv")
 
 player_contracts = player_stats.merge(
     contracts,
