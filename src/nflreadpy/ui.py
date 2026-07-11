@@ -195,6 +195,20 @@ DISPLAY_COLUMNS = [
     "fantasy_points",
 ]
 
+SPLIT_CATEGORIES: dict[str, tuple[str, str]] = {
+    "location": ("location_label", "Location"),
+    "day": ("weekday", "Day"),
+    "month": ("month", "Month"),
+    "surface": ("surface", "Surface"),
+    "weather": ("weather_category", "Weather"),
+    "temperature": ("temperature_category", "Temperature"),
+    "outcome": ("outcome", "Outcome"),
+    "victory_margin": ("victory_margin", "Victory margin"),
+    "season_games": ("season_game_block", "Season games"),
+    "group": ("group_label", "Group"),
+    "divisional": ("divisional", "Divisional"),
+}
+
 
 @dataclass(frozen=True)
 class SearchConfig:
@@ -204,6 +218,7 @@ class SearchConfig:
     seasons: tuple[int, ...]
     limit: int = 8
     compare: tuple[str, ...] = ()
+    split_category: str | None = None
 
 
 def parse_compare_names(value: str | None) -> tuple[str, ...]:
@@ -297,17 +312,17 @@ def suggest_names(df: pl.DataFrame, query: str, limit: int = 20) -> list[str]:
         if col in df.columns
     ]
 
-    candidates: set[str] = set()
+    candidate_values: list[str] = []
     for col in candidate_columns:
-        candidates.update(
+        candidate_values.extend(
             str(value)
             for value in df.select(pl.col(col)).unique().to_series().to_list()
             if value is not None and str(value).strip()
         )
 
     # Include city/team alias strings and team codes so team search suggestions are available.
-    candidates.update(TEAM_ALIASES.keys())
-    candidates.update(TEAM_ALIASES.values())
+    candidate_values.extend(TEAM_ALIASES.keys())
+    candidate_values.extend(TEAM_ALIASES.values())
 
     def format_suggestion(value: str) -> str:
         if value in TEAM_ALIASES.keys():
@@ -316,10 +331,23 @@ def suggest_names(df: pl.DataFrame, query: str, limit: int = 20) -> list[str]:
             return value.upper()
         return value
 
+    seen: set[str] = set()
     scored: list[tuple[int, int, int, int, int, int, int, str]] = []
-    for value in candidates:
-        normalized = value.lower().strip()
-        if not normalized or normalized_query not in normalized:
+    for value in candidate_values:
+        display_value = value.strip()
+        if not display_value or display_value in seen:
+            continue
+        seen.add(display_value)
+
+        normalized = display_value.lower().strip()
+        if not normalized:
+            continue
+
+        token_matches = [token for token in re.split(r"\s+", normalized) if token]
+        token_score = sum(1 for token in token_matches if normalized_query in token)
+        partial_word_match = any(normalized_query in token for token in token_matches)
+        full_value_match = normalized_query in normalized
+        if not full_value_match and not partial_word_match:
             continue
 
         exact_match = 2 if normalized == normalized_query else 0
@@ -327,10 +355,24 @@ def suggest_names(df: pl.DataFrame, query: str, limit: int = 20) -> list[str]:
         whole_word = 1 if re.search(rf"\b{re.escape(normalized_query)}\b", normalized) else 0
         word_count = len(normalized.split())
         dot_score = 1 if "." in normalized else 0
-        scored.append((exact_match, starts_with, whole_word, word_count, dot_score, -len(normalized), format_suggestion(value)))
+        scored.append((
+            exact_match,
+            starts_with,
+            whole_word,
+            token_score,
+            word_count,
+            dot_score,
+            -len(normalized),
+            format_suggestion(display_value),
+        ))
 
-    scored.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4], item[5]), reverse=True)
+    scored.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4], item[5], item[6]), reverse=True)
     return [item[-1] for item in scored][:limit]
+
+
+def get_autocomplete_suggestions(df: pl.DataFrame, query: str, limit: int = 20) -> list[str]:
+    """Return autocomplete suggestions for player and team names."""
+    return suggest_names(df, query, limit=limit)
 
 
 def best_player_stat(df: pl.DataFrame) -> str | None:
@@ -531,6 +573,221 @@ def summarize_team(
         "projection": None,
         "rows": rows,
         "summary": f"{team} team totals for {stat.replace('_', ' ')} across the loaded seasons.",
+    }
+
+
+def _add_split_columns(df: pl.DataFrame) -> pl.DataFrame:
+    if "game_date" in df.columns:
+        date_expr = pl.col("game_date").str.strptime(pl.Date, format="%Y-%m-%d")
+        df = df.with_columns(
+            date_expr.dt.strftime("%B").alias("month"),
+            date_expr.dt.strftime("%A").alias("weekday"),
+        )
+
+    if "roof" in df.columns:
+        df = df.with_columns(
+            pl.when(pl.col("roof").is_in(["dome", "closed"]))
+            .then(pl.lit("Indoors"))
+            .when(pl.col("roof").is_in(["outdoors", "open"]))
+            .then(pl.lit("Outdoors"))
+            .otherwise(pl.col("roof").cast(pl.Utf8).str.to_titlecase())
+            .alias("surface")
+        )
+
+    if "weather" in df.columns:
+        weather_text = pl.col("weather").cast(pl.Utf8).str.to_lowercase()
+        df = df.with_columns(
+            pl.when(weather_text.str.contains("rain"))
+            .then(pl.lit("Rain"))
+            .when(weather_text.str.contains("snow"))
+            .then(pl.lit("Snow"))
+            .when(
+                weather_text.str.contains("below 0")
+                | weather_text.str.contains("below zero")
+                | weather_text.str.contains(r"-\d+")
+                | weather_text.str.contains(r"\b0\s*°\b")
+            )
+            .then(pl.lit("Below 0"))
+            .otherwise(pl.col("weather").cast(pl.Utf8).str.to_titlecase())
+            .alias("weather_category")
+        )
+
+    if "div_game" in df.columns:
+        df = df.with_columns(
+            pl.when(pl.col("div_game") == 1)
+            .then(pl.lit("Divisional"))
+            .otherwise(pl.lit("Non-divisional"))
+            .alias("divisional")
+        )
+
+    if "game_date" in df.columns:
+        df = df.with_columns(
+            pl.when(pl.col("game_date").is_not_null())
+            .then(
+                pl.when(pl.col("game_date").str.strptime(pl.Date, format="%Y-%m-%d").dt.weekday().is_in([5, 6]))
+                .then(pl.lit("Weekend"))
+                .otherwise(pl.lit("Weekday"))
+            )
+            .otherwise(None)
+            .alias("day_group")
+        )
+
+    if "week" in df.columns:
+        df = df.with_columns(
+            pl.when(pl.col("week") <= 8)
+            .then(pl.lit("1-8"))
+            .otherwise(pl.lit("9-16"))
+            .alias("season_game_block")
+        )
+
+    temp_column = None
+    for candidate in ("temp", "temperature", "game_temp"):
+        if candidate in df.columns:
+            temp_column = candidate
+            break
+
+    if temp_column is not None:
+        df = df.with_columns(
+            pl.when(pl.col(temp_column).cast(pl.Float64) < 40)
+            .then(pl.lit("<40 F"))
+            .when(pl.col(temp_column).cast(pl.Float64) >= 81)
+            .then(pl.lit("81+ F"))
+            .otherwise(pl.lit("40-80 F"))
+            .alias("temperature_category")
+        )
+
+    if "is_home" in df.columns:
+        df = df.with_columns(
+            pl.when(pl.col("is_home") == True)
+            .then(pl.lit("Home"))
+            .otherwise(pl.lit("Away"))
+            .alias("location_label")
+        )
+
+    if "home_team" in df.columns and "away_team" in df.columns:
+        team_col = "recent_team" if "recent_team" in df.columns else "team" if "team" in df.columns else None
+        home_score_col = next((col for col in ("home_score", "home_score_sched") if col in df.columns), None)
+        away_score_col = next((col for col in ("away_score", "away_score_sched") if col in df.columns), None)
+        home_conf_col = next((col for col in ("home_conf", "home_conf_sched") if col in df.columns), None)
+        away_conf_col = next((col for col in ("away_conf", "away_conf_sched") if col in df.columns), None)
+        home_div_col = next((col for col in ("home_division", "home_division_sched") if col in df.columns), None)
+        away_div_col = next((col for col in ("away_division", "away_division_sched") if col in df.columns), None)
+
+        if team_col is not None and home_score_col is not None and away_score_col is not None:
+            team_score = pl.when(pl.col(team_col) == pl.col("home_team")).then(pl.col(home_score_col)).otherwise(pl.col(away_score_col))
+            opp_score = pl.when(pl.col(team_col) == pl.col("home_team")).then(pl.col(away_score_col)).otherwise(pl.col(home_score_col))
+            score_diff = (team_score - opp_score).abs()
+            df = df.with_columns(
+                team_score.alias("team_score"),
+                opp_score.alias("opponent_score"),
+                pl.when(team_score >= opp_score)
+                .then(pl.lit("Wins/Ties"))
+                .otherwise(pl.lit("Losses"))
+                .alias("outcome"),
+                pl.when(score_diff <= 7)
+                .then(pl.lit("0-7"))
+                .when(score_diff <= 14)
+                .then(pl.lit("8-14"))
+                .otherwise(pl.lit("15+"))
+                .alias("victory_margin"),
+            )
+
+        if team_col is not None and home_conf_col is not None and away_conf_col is not None:
+            same_division = False
+            if home_div_col is not None and away_div_col is not None:
+                same_division = True
+            opponent_conf = pl.when(pl.col(team_col) == pl.col("home_team")).then(pl.col(away_conf_col)).otherwise(pl.col(home_conf_col))
+            if same_division:
+                same_division_expr = pl.when(pl.col(team_col) == pl.col("home_team")).then(pl.col(home_div_col) == pl.col(away_div_col)).otherwise(pl.col(away_div_col) == pl.col(home_div_col))
+                df = df.with_columns(
+                    pl.when(same_division_expr)
+                    .then(pl.lit("vs Div"))
+                    .when(opponent_conf == "AFC")
+                    .then(pl.lit("vs AFC"))
+                    .otherwise(pl.lit("vs NFC"))
+                    .alias("group_label"),
+                )
+            else:
+                df = df.with_columns(
+                    pl.when(opponent_conf == "AFC")
+                    .then(pl.lit("vs AFC"))
+                    .otherwise(pl.lit("vs NFC"))
+                    .alias("group_label"),
+                )
+
+    return df
+
+
+def summarize_split(
+    df: pl.DataFrame,
+    split_category: str,
+    query: str = "",
+    stat: str | None = None,
+) -> dict[str, Any] | None:
+    if split_category not in SPLIT_CATEGORIES:
+        return None
+
+    df = _add_split_columns(df)
+    group_column, label = SPLIT_CATEGORIES[split_category]
+    if group_column not in df.columns:
+        return None
+
+    if query:
+        team = _find_team_alias(query)
+        if team:
+            team_col = "recent_team" if "recent_team" in df.columns else "team" if "team" in df.columns else None
+            if team_col:
+                df = df.filter(pl.col(team_col) == team)
+        else:
+            player_rows = find_player_rows(df, query)
+            if len(player_rows) > 0:
+                df = player_rows
+
+    if len(df) == 0:
+        return None
+
+    # Resolve the stat after narrowing to the matched player/team so a
+    # generic query like a player's name picks their most relevant stat
+    # (e.g. receiving_yards for a WR), same as summarize_player does.
+    if stat is None:
+        stat = best_player_stat(df) or default_stat(df.columns)
+    if not stat or stat not in df.columns:
+        return None
+
+    summary_df = (
+        df.filter(pl.col(group_column).is_not_null())
+        .group_by(group_column)
+        .agg(
+            [
+                pl.len().alias("games"),
+                pl.sum(stat).alias(stat),
+                pl.mean(stat).alias(f"{stat}_per_game"),
+            ]
+        )
+        .sort(stat, descending=True)
+    )
+
+    rows = []
+    for row in summary_df.to_dicts():
+        rows.append(
+            {
+                "split": row.get(group_column),
+                "games": int(row.get("games") or 0),
+                stat: round(float(row.get(stat) or 0), 2),
+                f"{stat}_per_game": round(float(row.get(f"{stat}_per_game") or 0), 2),
+            }
+        )
+
+    return {
+        "type": "split_summary",
+        "title": f"{label} splits for {stat.replace('_', ' ')}",
+        "stat": stat,
+        "projection": None,
+        "rows": rows,
+        "summary": (
+            f"Aggregated {stat.replace('_', ' ')} by {label.lower()} "
+            f"for {query or 'all loaded data'}."
+        ),
     }
 
 
@@ -793,7 +1050,7 @@ def compare_players(
 def answer_query(df: pl.DataFrame, config: SearchConfig) -> dict[str, Any]:
     """Return the best answer for a user's player/stat query."""
     query = config.query.strip()
-    if not query and not config.compare:
+    if not query and not config.compare and not config.split_category:
         return {
             "type": "empty",
             "title": "Ask about a player or team",
@@ -804,6 +1061,11 @@ def answer_query(df: pl.DataFrame, config: SearchConfig) -> dict[str, Any]:
         }
 
     stat = infer_stat(query, df.columns)
+
+    if config.split_category:
+        split_result = summarize_split(df, config.split_category, query=query, stat=stat)
+        if split_result:
+            return split_result
 
     if config.compare:
         compare_result = compare_players(df, config.compare, stat=stat)
@@ -1033,6 +1295,7 @@ class NflReadPyUIHandler(BaseHTTPRequestHandler):
                 # Apply optional split filters from query params
                 df = _apply_split_filters(df, params)
                 compare_names = parse_compare_names(params.get("compare", [""])[0])
+                split_category = params.get("split_category", [None])[0] or None
 
                 result = answer_query(
                     df,
@@ -1041,6 +1304,7 @@ class NflReadPyUIHandler(BaseHTTPRequestHandler):
                         seasons=seasons,
                         limit=limit,
                         compare=compare_names,
+                        split_category=split_category,
                     ),
                 )
                 result["seasons"] = seasons
@@ -1343,19 +1607,59 @@ def render_page() -> str:
       width: 100%;
       border-collapse: collapse;
       min-width: 720px;
+      background: var(--surface);
     }}
     th, td {{
-      border-bottom: 1px solid var(--line);
-      padding: 10px 12px;
+      border-bottom: 1px solid #e8edf3;
+      padding: 14px 16px;
       text-align: left;
       white-space: nowrap;
-      font-size: 14px;
+      font-size: 13px;
+      color: #102a43;
     }}
     th {{
-      background: #f0f4f8;
-      color: #33495f;
+      background: #f4f7fb;
+      color: #1f3f5b;
       font-size: 12px;
       text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }}
+    tbody tr:nth-child(odd) td {{
+      background: #ffffff;
+    }}
+    tbody tr:nth-child(even) td {{
+      background: #f8fbff;
+    }}
+    tbody tr:hover td {{
+      background: #eef4fb;
+    }}
+    .table-wrap {{
+      overflow-x: auto;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      border-radius: 18px;
+      border: 1px solid #e1e7ef;
+      background: #ffffff;
+    }}
+    .split-summary-header {{
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }}
+    .split-summary-header h3 {{
+      margin: 0;
+      font-size: 18px;
+      color: #102a43;
+    }}
+    .split-summary-pill {{
+      background: #eef4ff;
+      color: #0b69d9;
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
     }}
     tr:last-child td {{ border-bottom: 0; }}
     @media (max-width: 760px) {{
@@ -1367,6 +1671,10 @@ def render_page() -> str:
       }}
       .metrics {{
         grid-template-columns: 1fr 1fr;
+      }}
+      .split-summary-header {{
+        flex-direction: column;
+        align-items: stretch;
       }}
     }}
   </style>
@@ -1417,6 +1725,23 @@ def render_page() -> str:
             <option value="">All</option>
             <option value="indoors">Indoors</option>
             <option value="outdoors">Outdoors</option>
+          </select>
+        </label>
+        <label>
+          Split summary category
+          <select id="splitCategory" name="split_category">
+            <option value="">None</option>
+            <option value="location">Location</option>
+            <option value="day">Day</option>
+            <option value="month">Month</option>
+            <option value="surface">Surface</option>
+            <option value="weather">Weather</option>
+            <option value="temperature">Temperature</option>
+            <option value="outcome">Outcome</option>
+            <option value="victory_margin">Victory margin</option>
+            <option value="season_games">Season games</option>
+            <option value="group">Group</option>
+            <option value="divisional">Divisional</option>
           </select>
         </label>
         <label>
@@ -1590,6 +1915,7 @@ def render_page() -> str:
         time_of_day: document.querySelector('#time_of_day')?.value || '',
         weather: document.querySelector('#weather')?.value || '',
         divisional: document.querySelector('#divisional')?.checked ? '1' : '',
+        split_category: document.querySelector('#splitCategory')?.value || '',
       });
       try {{
         const response = await fetch(`/api/search?${{params.toString()}}`);
@@ -1688,31 +2014,56 @@ def render_page() -> str:
         <div class="projection">
           <p>${escapeHtml(payload.projection.method)}</p>
           <div class="metrics">
-            <div class="metric"><span>Projection</span><strong>${{payload.projection.projection}}</strong></div>
-            <div class="metric"><span>Recent avg</span><strong>${{payload.projection.recent_average}}</strong></div>
-            <div class="metric"><span>Sample avg</span><strong>${{payload.projection.sample_average}}</strong></div>
-            <div class="metric"><span>Trend</span><strong>${{escapeHtml(payload.projection.direction)}}</strong></div>
+            <div class="metric"><span>Projection</span><strong>${payload.projection.projection}</strong></div>
+            <div class="metric"><span>Recent avg</span><strong>${payload.projection.recent_average}</strong></div>
+            <div class="metric"><span>Sample avg</span><strong>${payload.projection.sample_average}</strong></div>
+            <div class="metric"><span>Trend</span><strong>${escapeHtml(payload.projection.direction)}</strong></div>
           </div>
         </div>` : "";
+      const table = payload.type === "split_summary" ? renderSplitSummary(payload) : renderTable(payload.rows || []);
       answerEl.innerHTML = `
         <div class="result-header">
-          <h2>${{escapeHtml(payload.title)}}</h2>
-          <p>${{escapeHtml(payload.summary || "")}}</p>
+          <h2>${escapeHtml(payload.title)}</h2>
+          <p>${escapeHtml(payload.summary || "")}</p>
         </div>
-        ${{projection}}
-        ${{renderTable(payload.rows || [])}}
+        ${projection}
+        ${table}
       `;
-    }}
+    }
+
+    function renderSplitSummary(payload) {
+      if (!payload.rows || !payload.rows.length) return "";
+      const rows = payload.rows;
+      const totalGames = rows.reduce((sum, row) => sum + Number(row.games || 0), 0);
+      const totalStat = rows.reduce((sum, row) => sum + Number(row[payload.stat] || 0), 0);
+      const topSplit = rows[0] ? `${escapeHtml(rows[0].split)} (${escapeHtml(rows[0][payload.stat])})` : "N/A";
+      const columns = ["split", "games", payload.stat, `${payload.stat}_per_game`].filter(Boolean);
+      const head = columns.map((column) => `<th>${escapeHtml(column.replaceAll("_", " "))}</th>`).join("");
+      const body = rows.map((row) => {
+        return `<tr>${columns.map((column) => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`;
+      }).join("");
+      return `
+        <div class="split-summary-header">
+          <h3>${escapeHtml(payload.title)}</h3>
+          <span class="split-summary-pill">${escapeHtml(payload.stat.replaceAll("_", " "))}</span>
+        </div>
+        <div class="split-summary-stats">
+          <div class="split-summary-card"><span>Total games</span><strong>${escapeHtml(totalGames)}</strong></div>
+          <div class="split-summary-card"><span>Total ${escapeHtml(payload.stat.replaceAll("_", " "))}</span><strong>${escapeHtml(totalStat.toFixed(1))}</strong></div>
+          <div class="split-summary-card"><span>Top split</span><strong>${topSplit}</strong></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
 
     function renderTable(rows) {
       if (!rows.length) return "";
       const columns = Object.keys(rows[0]);
-      const head = columns.map((column) => `<th>${{escapeHtml(column.replaceAll("_", " "))}}</th>`).join("");
-      const body = rows.map((row) => {{
-        return `<tr>${{columns.map((column) => `<td>${{escapeHtml(row[column])}}</td>`).join("")}}</tr>`;
-      }}).join("");
-      return `<div class="table-wrap"><table><thead><tr>${{head}}</tr></thead><tbody>${{body}}</tbody></table></div>`;
-    }}
+      const head = columns.map((column) => `<th>${escapeHtml(column.replaceAll("_", " "))}</th>`).join("");
+      const body = rows.map((row) => {
+        return `<tr>${columns.map((column) => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`;
+      }).join("");
+      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
 
     function escapeHtml(value) {
       return String(value ?? "")

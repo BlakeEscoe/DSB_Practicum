@@ -2,7 +2,14 @@
 
 import polars as pl
 
-from nflreadpy.ui import SearchConfig, answer_query, infer_stat, project_player_stat
+from nflreadpy.ui import (
+    SearchConfig,
+    answer_query,
+    get_autocomplete_suggestions,
+    infer_stat,
+    project_player_stat,
+    summarize_split,
+)
 
 
 def sample_stats() -> pl.DataFrame:
@@ -80,6 +87,15 @@ def test_answer_query_returns_player_projection() -> None:
     assert len(answer["rows"]) == 3
 
 
+def test_get_autocomplete_suggestions_matches_first_or_last_name() -> None:
+    suggestions = get_autocomplete_suggestions(sample_stats(), "jeff", limit=5)
+
+    assert "Justin Jefferson" in suggestions
+
+    team_suggestions = get_autocomplete_suggestions(sample_stats(), "vik", limit=5)
+    assert "Vikings" in team_suggestions or "MIN" in team_suggestions
+
+
 def test_answer_query_returns_leaderboard_without_player_match() -> None:
     answer = answer_query(
         sample_stats(),
@@ -100,3 +116,70 @@ def test_project_player_stat_uses_recent_games() -> None:
     assert projection is not None
     assert projection["projection"] == 91.0
     assert projection["sample_size"] == 3
+
+
+def test_answer_query_returns_split_summary_by_day() -> None:
+    df = sample_stats().with_columns(
+        pl.lit("2024-09-08").alias("game_date"),
+        pl.lit("open").alias("roof"),
+        pl.lit("Clear").alias("weather"),
+        pl.lit(0).alias("div_game"),
+        pl.lit(True).alias("is_home"),
+    )
+    answer = answer_query(
+        df,
+        SearchConfig(query="Justin Jefferson", seasons=(2024,), split_category="day"),
+    )
+
+    assert answer["type"] == "split_summary"
+    assert any(row["split"] == "Sunday" for row in answer["rows"])
+    # All three sample games share the same (Sunday) game_date, so they
+    # collapse into one group and the split sums receiving_yards across them:
+    # 59 + 133 + 81.
+    assert answer["rows"][0]["receiving_yards"] == 273
+
+
+def test_answer_query_returns_split_summary_by_group() -> None:
+    df = sample_stats().with_columns(
+        pl.lit("2024-09-08").alias("game_date"),
+        pl.lit("open").alias("roof"),
+        pl.lit("Clear").alias("weather"),
+        pl.lit(0).alias("div_game"),
+        pl.lit(True).alias("is_home"),
+        pl.lit("MIN").alias("home_team"),
+        pl.lit("NYG").alias("away_team"),
+        pl.lit(24).alias("home_score"),
+        pl.lit(20).alias("away_score"),
+        pl.lit("NFC").alias("home_conf"),
+        pl.lit("NFC").alias("away_conf"),
+    )
+    answer = answer_query(
+        df,
+        SearchConfig(query="Justin Jefferson", seasons=(2024,), split_category="group"),
+    )
+
+    assert answer["type"] == "split_summary"
+    assert any("vs NFC" in str(row["split"]) for row in answer["rows"])
+
+
+def test_answer_query_returns_split_summary_by_outcome() -> None:
+    df = sample_stats().with_columns(
+        pl.lit("2024-09-08").alias("game_date"),
+        pl.lit("open").alias("roof"),
+        pl.lit("Clear").alias("weather"),
+        pl.lit(0).alias("div_game"),
+        pl.lit(True).alias("is_home"),
+        pl.lit("MIN").alias("home_team"),
+        pl.lit("NYG").alias("away_team"),
+        pl.lit(24).alias("home_score"),
+        pl.lit(20).alias("away_score"),
+        pl.lit("NFC").alias("home_conf"),
+        pl.lit("NFC").alias("away_conf"),
+    )
+    answer = answer_query(
+        df,
+        SearchConfig(query="Justin Jefferson", seasons=(2024,), split_category="outcome"),
+    )
+
+    assert answer["type"] == "split_summary"
+    assert any(row["split"] == "Wins/Ties" for row in answer["rows"])
