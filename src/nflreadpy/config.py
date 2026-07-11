@@ -1,13 +1,18 @@
 """Configuration management for nflreadpy."""
 
 from enum import Enum
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 from platformdirs import user_cache_dir
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+try:
+    _PACKAGE_VERSION = version("nflreadpy")
+except PackageNotFoundError:
+    _PACKAGE_VERSION = "dev"
 
 
 class CacheMode(str, Enum):
@@ -97,7 +102,7 @@ class NflreadpyConfig(BaseSettings):
     )
 
     user_agent: str = Field(
-        default=f"nflverse/nflreadpy {version('nflreadpy')}",
+        default=f"nflverse/nflreadpy {_PACKAGE_VERSION}",
         description="User agent string sent with HTTP requests. Identifies the client to servers. Default includes package name and version.",
         alias="NFLREADPY_USER_AGENT",
     )
