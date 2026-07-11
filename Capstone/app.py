@@ -8,6 +8,17 @@ import polars as pl
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
+def _flatten_html(markup: str) -> str:
+    """Strip leading whitespace from every line of an HTML fragment.
+
+    st.markdown(..., unsafe_allow_html=True) still runs the text through a
+    CommonMark parser first, and a line indented 4+ spaces reads as a
+    fenced code block there - which silently turns these indented f-string
+    templates into literal text instead of rendered HTML.
+    """
+    return "\n".join(line.lstrip() for line in markup.strip("\n").splitlines())
+
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = ROOT / "src"
 if str(SRC_PATH) not in sys.path:
@@ -19,7 +30,6 @@ try:
         answer_query,
         get_autocomplete_suggestions,
         load_recent_player_stats,
-        parse_compare_names,
         parse_seasons,
         _apply_split_filters,
     )
@@ -432,7 +442,7 @@ def render_splits_table(splits: dict[str, Any]) -> str:
                     cells.append(f"<td>{html.escape(str(values.get(header, '')))}</td>")
             body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
-    return f"""
+    return _flatten_html(f"""
     <div class="espn-splits-wrapper">
       <style>
         .espn-splits-wrapper {{ overflow-x: auto; margin: 0.5rem 0 1rem; }}
@@ -464,7 +474,7 @@ def render_splits_table(splits: dict[str, Any]) -> str:
         <tbody>{''.join(body_rows)}</tbody>
       </table>
     </div>
-    """
+    """)
 
 
 def _enrich_with_schedule_details(df: pl.DataFrame, seasons: tuple[int, ...]) -> pl.DataFrame:
@@ -528,6 +538,223 @@ def _enrich_with_schedule_details(df: pl.DataFrame, seasons: tuple[int, ...]) ->
 
 
 # --- End ESPN-style stat splits ---------------------------------------------
+
+
+# --- Side-by-side player comparison cards ------------------------------------
+#
+# Renders the compare-players search result as photo/team/position cards plus
+# a stat table, in the spirit of FantasyPros' player-compare tool. We only
+# have historical box-score stats (no upcoming matchup, odds, injury status,
+# or expert consensus), so this covers season fantasy points and
+# position-appropriate per-game stat totals, reusing the same stat-group
+# helpers the ESPN-style splits table above uses.
+
+_LOWER_IS_BETTER_METRICS = {"INT", "SACK"}
+
+
+def compute_comparison(df: pl.DataFrame, player_names: tuple[str, ...]) -> dict[str, Any] | None:
+    name_column = next(
+        (c for c in ("player_display_name", "player_name", "display_name", "name") if c in df.columns),
+        None,
+    )
+    if name_column is None:
+        return None
+
+    team_col = "recent_team" if "recent_team" in df.columns else "team" if "team" in df.columns else None
+    sort_cols = [c for c in ("season", "week") if c in df.columns]
+
+    players: list[dict[str, Any]] = []
+    for name in player_names:
+        rows = df.filter(pl.col(name_column) == name)
+        if len(rows) == 0:
+            continue
+        if sort_cols:
+            rows = rows.sort(sort_cols)
+
+        position = None
+        if "position" in rows.columns:
+            positions = [str(p) for p in rows.select("position").to_series().to_list() if p]
+            if positions:
+                position = Counter(positions).most_common(1)[0][0]
+
+        team = None
+        if team_col:
+            teams = [str(t) for t in rows.select(team_col).drop_nulls().to_series().to_list()]
+            if teams:
+                team = teams[-1]
+
+        headshot = None
+        if "headshot_url" in rows.columns:
+            urls = [u for u in rows.select("headshot_url").drop_nulls().to_series().to_list() if u]
+            headshot = urls[0] if urls else None
+
+        games = len(rows)
+        available_fpts = [c for c in _FPTS_COLUMNS if c in rows.columns]
+        fpts_total = 0.0
+        if available_fpts:
+            sums = rows.select([pl.sum(c).alias(c) for c in available_fpts]).to_dicts()[0]
+            fpts_total = round(_sleeper_ppr_points(sums), 2)
+        fpts_avg = round(fpts_total / games, 2) if games else 0.0
+
+        totals_cols = {c for _, cols in STAT_GROUP_BUILDERS.values() for c in cols}
+        available_totals = [c for c in totals_cols if c in rows.columns]
+        totals = (
+            rows.select([pl.sum(c).alias(c) for c in available_totals]).to_dicts()[0]
+            if available_totals
+            else {}
+        )
+        groups = _player_stat_groups(position, totals)
+        group_rows = {group: _aggregate_group_row(rows, group) for group in groups}
+
+        players.append(
+            {
+                "name": name,
+                "position": position,
+                "team": team,
+                "headshot": headshot,
+                "games": games,
+                "fpts_total": fpts_total,
+                "fpts_avg": fpts_avg,
+                "groups": groups,
+                "group_rows": group_rows,
+            }
+        )
+
+    if len(players) < 2:
+        return None
+
+    all_groups = [g for g in ("passing", "rushing", "receiving") if any(g in p["groups"] for p in players)]
+    return {"players": players, "groups": all_groups}
+
+
+def _best_indices(values: list[float], lower_is_better: bool = False) -> set[int]:
+    if not values:
+        return set()
+    target = min(values) if lower_is_better else max(values)
+    return {i for i, v in enumerate(values) if v == target}
+
+
+def render_comparison(comparison: dict[str, Any]) -> str:
+    players = comparison.get("players", [])
+    groups = comparison.get("groups", [])
+    if len(players) < 2:
+        return ""
+
+    n = len(players)
+
+    header_cards = []
+    for p in players:
+        photo = (
+            f'<img src="{html.escape(p["headshot"])}" alt="{html.escape(p["name"])}">'
+            if p.get("headshot")
+            else '<div class="compare-photo-placeholder"></div>'
+        )
+        team_position = " - ".join(x for x in (p.get("position"), p.get("team")) if x)
+        header_cards.append(
+            f"""
+            <div class="compare-card">
+              {photo}
+              <div class="compare-name">{html.escape(p["name"])}</div>
+              <div class="compare-meta">{html.escape(team_position)}</div>
+              <div class="compare-meta">{p["games"]} games</div>
+            </div>
+            """
+        )
+
+    def stat_row(label: str, values: list[float], lower_is_better: bool = False) -> str:
+        best = _best_indices(values, lower_is_better)
+        cells = "".join(
+            f'<td class="{"compare-best" if i in best else ""}">{html.escape(str(v))}</td>'
+            for i, v in enumerate(values)
+        )
+        return f'<tr><td class="compare-label-col">{html.escape(label)}</td>{cells}</tr>'
+
+    fpts_rows = stat_row("Season Total", [p["fpts_total"] for p in players]) + stat_row(
+        "Season Avg", [p["fpts_avg"] for p in players]
+    )
+
+    group_sections = []
+    for group in groups:
+        headers = STAT_GROUP_HEADERS.get(group, [])
+        rows_html = []
+        for header in headers:
+            values = [p["group_rows"].get(group, {}).get(header, 0) for p in players]
+            rows_html.append(stat_row(header, values, lower_is_better=header in _LOWER_IS_BETTER_METRICS))
+        group_sections.append(
+            f"""
+            <tr class="compare-section-row"><td colspan="{n + 1}">{html.escape(STAT_GROUP_LABELS.get(group, group.upper()))}</td></tr>
+            {''.join(rows_html)}
+            """
+        )
+
+    return _flatten_html(f"""
+    <div class="compare-wrapper">
+      <style>
+        .compare-wrapper {{ margin: 0.5rem 0 1rem; }}
+        .compare-cards {{
+          display: grid; grid-template-columns: repeat({n}, 1fr); gap: 12px; margin-bottom: 12px;
+        }}
+        .compare-card {{
+          text-align: center; padding: 12px; border-radius: 10px; background: rgba(128,128,128,0.08);
+        }}
+        .compare-card img, .compare-photo-placeholder {{
+          width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin: 0 auto 8px;
+          background: rgba(128,128,128,0.2);
+        }}
+        .compare-name {{ font-weight: 700; font-size: 1rem; }}
+        .compare-meta {{ font-size: 0.8rem; opacity: 0.75; }}
+        .compare-table {{ border-collapse: collapse; width: 100%; font-size: 0.85rem; }}
+        .compare-table td {{
+          padding: 6px 10px; border-bottom: 1px solid rgba(128,128,128,0.25); text-align: center;
+        }}
+        .compare-table td.compare-label-col {{ text-align: left; font-weight: 600; }}
+        .compare-table td.compare-best {{ font-weight: 700; background: rgba(45,212,191,0.18); }}
+        .compare-section-row td {{
+          text-align: left; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em;
+          background: rgba(128,128,128,0.14); padding-top: 8px; padding-bottom: 8px; font-weight: 700;
+        }}
+      </style>
+      <div class="compare-cards">{''.join(header_cards)}</div>
+      <table class="compare-table">
+        <tbody>
+          {fpts_rows}
+          {''.join(group_sections)}
+        </tbody>
+      </table>
+    </div>
+    """)
+
+
+# --- End player comparison cards ---------------------------------------------
+
+# Single "type of split" dropdown driving the game log filter, replacing the
+# old set of 5 independent selectboxes (Location/Roof/Day/Time/Weather) that
+# could be combined into an over-restrictive AND filter. Each option maps to
+# exactly one (_apply_split_filters param, value) pair.
+SPLIT_OPTIONS: dict[str, tuple[str, str]] = {
+    "All games": ("", ""),
+    "Location: Home": ("location", "home"),
+    "Location: Away": ("location", "away"),
+    "Roof: Indoors": ("roof", "indoors"),
+    "Roof: Outdoors": ("roof", "outdoors"),
+    "Day: Weekday": ("day", "weekday"),
+    "Day: Weekend": ("day", "weekend"),
+    "Day: Monday": ("day", "monday"),
+    "Day: Tuesday": ("day", "tuesday"),
+    "Day: Wednesday": ("day", "wednesday"),
+    "Day: Thursday": ("day", "thursday"),
+    "Day: Friday": ("day", "friday"),
+    "Day: Saturday": ("day", "saturday"),
+    "Day: Sunday": ("day", "sunday"),
+    "Time of day: Europe": ("time_of_day", "europe"),
+    "Time of day: Early": ("time_of_day", "early"),
+    "Time of day: Midday": ("time_of_day", "midday"),
+    "Time of day: Night": ("time_of_day", "night"),
+    "Weather: Rain": ("weather", "rain"),
+    "Weather: Snow": ("weather", "snow"),
+    "Weather: Below 0°": ("weather", "below_0"),
+    "Divisional rivals only": ("divisional", "1"),
+}
 
 
 # --- Sleeper standard PPR scoring + per-game log -----------------------------
@@ -799,7 +1026,7 @@ def render_game_log_table(game_log: dict[str, Any]) -> str:
                 cells.append(f"<td>{html.escape(_format_stat_cell(values.get(header)))}</td>")
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
-    return f"""
+    return _flatten_html(f"""
     <div class="game-log-wrapper">
       <style>
         .game-log-wrapper {{ overflow-x: auto; margin: 0.5rem 0 1rem; }}
@@ -823,7 +1050,7 @@ def render_game_log_table(game_log: dict[str, Any]) -> str:
         <tbody>{''.join(body_rows)}</tbody>
       </table>
     </div>
-    """
+    """)
 
 
 # --- End Sleeper standard PPR scoring + per-game log -------------------------
@@ -836,22 +1063,31 @@ def load_stats(seasons_text: str):
     return _enrich_with_schedule_details(df, seasons)
 
 
-def _search_players(searchterm: str) -> list[str]:
-    """Callback for st_searchbox: called on every keystroke (debounced)."""
-    if not searchterm or len(searchterm.strip()) < 1:
-        return []
-    seasons_text = st.session_state.get("seasons_input") or ", ".join(
-        str(season) for season in parse_seasons(None)
-    )
-    try:
-        df = load_stats(seasons_text)
-    except Exception:
-        return []
-    # Restrict player-name candidates to offensive skill positions (team-name
-    # suggestions are unaffected, since every team fields offensive players).
-    if "position" in df.columns:
-        df = df.filter(pl.col("position").is_in(OFFENSIVE_POSITIONS))
-    return get_autocomplete_suggestions(df, searchterm, limit=8)
+def _make_search_players(seasons_state_key: str):
+    """Build a st_searchbox callback bound to one tab's own seasons picker.
+
+    Each tab (Stat Search / Compare Players) has its own seasons multiselect,
+    so the live-suggest callback needs to read the matching session_state key
+    rather than a single shared one.
+    """
+
+    def _search_players(searchterm: str) -> list[str]:
+        if not searchterm or len(searchterm.strip()) < 1:
+            return []
+        seasons_text = st.session_state.get(seasons_state_key) or ", ".join(
+            str(season) for season in parse_seasons(None)
+        )
+        try:
+            df = load_stats(seasons_text)
+        except Exception:
+            return []
+        # Restrict player-name candidates to offensive skill positions (team-name
+        # suggestions are unaffected, since every team fields offensive players).
+        if "position" in df.columns:
+            df = df.filter(pl.col("position").is_in(OFFENSIVE_POSITIONS))
+        return get_autocomplete_suggestions(df, searchterm, limit=8)
+
+    return _search_players
 
 
 def render_result(answer: dict[str, any]) -> None:
@@ -874,12 +1110,19 @@ def render_result(answer: dict[str, any]) -> None:
     game_log = answer.get("game_log")
     has_game_log = bool(game_log and game_log.get("rows"))
 
+    comparison = answer.get("comparison")
+    if comparison:
+        table_html = render_comparison(comparison)
+        if table_html:
+            st.markdown(table_html, unsafe_allow_html=True)
+
     rows = answer.get("rows", [])
     # For a matched player, the game log below already covers this data
     # (reordered, styled, with Sleeper PPR scoring), so skip the raw table.
-    if rows and not has_game_log:
+    # A compare result is rendered as cards above instead of a raw table too.
+    if rows and not has_game_log and not comparison:
         st.dataframe(rows)
-    elif not rows and not has_game_log:
+    elif not rows and not has_game_log and not comparison:
         st.info("No rows available for this query.")
 
     if has_game_log:
@@ -896,13 +1139,7 @@ def render_result(answer: dict[str, any]) -> None:
             st.markdown(table_html, unsafe_allow_html=True)
 
 
-def run_search():
-    # Seasons and the search box live outside the form: widgets inside an
-    # st.form only rerun the script on submit. st.text_input also only
-    # commits on blur/Enter, not per keystroke, so it can't drive live
-    # suggestions either. st_searchbox is a component built for exactly
-    # this: it calls _search_players on every keystroke (debounced) and
-    # renders a live dropdown, with no need to press Enter or tab away.
+def _seasons_multiselect(key: str, state_key: str) -> str:
     default_seasons = list(parse_seasons(None))
     current_season = default_seasons[-1]
     season_options = list(range(current_season, 1998, -1))
@@ -910,45 +1147,62 @@ def run_search():
         "Seasons",
         options=season_options,
         default=default_seasons,
-        key="seasons_multiselect",
+        key=key,
         help="Select one or more seasons",
     )
     seasons = ", ".join(str(season) for season in sorted(selected_seasons))
-    # _search_players reads this key directly (it only gets a search term,
-    # not the multiselect's value) to know which seasons to search within.
-    st.session_state["seasons_input"] = seasons
+    st.session_state[state_key] = seasons
+    return seasons
+
+
+def _split_selectbox(key: str) -> tuple[str, str, str]:
+    split_label = st.selectbox(
+        "Split",
+        list(SPLIT_OPTIONS.keys()),
+        key=key,
+        help="Pick a split type to filter the game log to just those games.",
+    )
+    split_key, split_value = SPLIT_OPTIONS[split_label]
+    return split_label, split_key, split_value
+
+
+def _build_split_params(split_key: str, split_value: str) -> dict[str, list[str]]:
+    params = {
+        "location": [""],
+        "roof": [""],
+        "day": [""],
+        "time_of_day": [""],
+        "weather": [""],
+        "divisional": [""],
+    }
+    if split_key:
+        params[split_key] = [split_value]
+    return params
+
+
+def run_stat_search():
+    # Seasons and the search box live outside the form: widgets inside an
+    # st.form only rerun the script on submit. st.text_input also only
+    # commits on blur/Enter, not per keystroke, so it can't drive live
+    # suggestions either. st_searchbox is a component built for exactly
+    # this: it calls the search callback on every keystroke (debounced) and
+    # renders a live dropdown, with no need to press Enter or tab away.
+    seasons = _seasons_multiselect("stat_seasons_multiselect", "stat_seasons_input")
     query = st_searchbox(
-        _search_players,
+        _make_search_players("stat_seasons_input"),
         key="player_searchbox",
         placeholder="Player Search",
         default_use_searchterm=True,
         clear_on_submit=False,
     ) or ""
 
-    with st.form("search_form"):
-        left, right = st.columns([3, 2])
-        with left:
-            compare = st.text_input(
-                "Compare players",
-                help="Enter 2-3 player names separated by commas, and, or vs.",
-            )
-        with right:
-            location = st.selectbox("Location", ["", "home", "away"])
-            roof = st.selectbox("Roof", ["", "indoors", "outdoors"])
-            day = st.selectbox(
-                "Day", ["", "weekday", "weekend", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            )
-            time_of_day = st.selectbox(
-                "Time of day", ["", "europe", "early", "midday", "night"]
-            )
-            weather = st.selectbox("Weather", ["", "rain", "snow", "below_0"])
-            divisional = st.checkbox("Divisional rivals only")
-
+    with st.form("stat_search_form"):
+        split_label, split_key, split_value = _split_selectbox("stat_split_select")
         submitted = st.form_submit_button("Search")
 
     if submitted:
-        if not query and not compare:
-            st.warning("Enter a query or compare players.")
+        if not query:
+            st.warning("Enter a query.")
             return
 
         try:
@@ -957,25 +1211,10 @@ def run_search():
             st.error(f"Failed to load stats: {exc}")
             return
 
-        params = {
-            "location": [location],
-            "roof": [roof],
-            "day": [day],
-            "time_of_day": [time_of_day],
-            "weather": [weather],
-            "divisional": ["1" if divisional else ""],
-        }
-
-        filtered_df = _apply_split_filters(df, params)
-        compare_names = parse_compare_names(compare)
+        filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
         answer = answer_query(
             filtered_df,
-            SearchConfig(
-                query=query,
-                seasons=parse_seasons(seasons),
-                limit=12,
-                compare=compare_names,
-            ),
+            SearchConfig(query=query, seasons=parse_seasons(seasons), limit=12),
         )
 
         if answer.get("type") == "player":
@@ -990,41 +1229,114 @@ def run_search():
         render_result(answer)
 
 
-run_search()
+def run_compare():
+    seasons = _seasons_multiselect("compare_seasons_multiselect", "compare_seasons_input")
 
-st.markdown("---")
+    st.write("Compare players")
+    st.caption("Select at least 2 players below.")
+    compare_cols = st.columns(3)
+    compare_selections: list[str] = []
+    search_players = _make_search_players("compare_seasons_input")
+    for i, col in enumerate(compare_cols):
+        with col:
+            selection = st_searchbox(
+                search_players,
+                key=f"compare_searchbox_{i}",
+                placeholder=f"Player {i + 1}",
+                default_use_searchterm=True,
+                clear_on_submit=False,
+            ) or ""
+            compare_selections.append(selection)
+    # Autocomplete (same live-suggest widget as the main search) guarantees
+    # every compare slot is a name that actually exists in the data, instead
+    # of a free-typed name with a typo silently dropping out of the compare.
+    compare_names = tuple(name for name in compare_selections if name)
 
-st.header("Sleeper league lookup")
+    with st.form("compare_form"):
+        split_label, split_key, split_value = _split_selectbox("compare_split_select")
+        submitted = st.form_submit_button("Compare")
 
-username = st.text_input("Sleeper username for league lookup", value="")
-season = st.selectbox("Sleeper season", [2026, 2025, 2024], index=0, key="sleeper_season")
+    if submitted:
+        if not compare_names:
+            st.warning("Select at least 2 players to compare.")
+            return
 
-if st.button("Find My Leagues", key="find_leagues"):
-    if not username:
-        st.warning("Enter your Sleeper username.")
-    else:
-        user_id = get_user_id(username)
-        if isinstance(user_id, str) and user_id.startswith("Error"):
-            st.error(user_id)
+        if len(compare_names) < 2:
+            st.warning(
+                "Only one compare box has a selection. Pick a player from the "
+                "dropdown in at least 2 of the 3 compare boxes to see a comparison."
+            )
+            return
+
+        try:
+            df = load_stats(seasons)
+        except Exception as exc:
+            st.error(f"Failed to load stats: {exc}")
+            return
+
+        filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
+        answer = answer_query(
+            filtered_df,
+            SearchConfig(query="", seasons=parse_seasons(seasons), limit=12, compare=compare_names),
+        )
+
+        if answer.get("type") != "compare":
+            missing = f" under the '{split_label}' split" if split_key else ""
+            st.warning(
+                f"Couldn't build a comparison for {', '.join(compare_names)}{missing} "
+                "- one or more of them may have no games in the selected seasons."
+            )
+            return
+
+        comparison = compute_comparison(filtered_df, compare_names)
+        if comparison:
+            answer["comparison"] = comparison
+
+        render_result(answer)
+
+
+def run_sleeper():
+    username = st.text_input("Sleeper username for league lookup", value="")
+    season = st.selectbox("Sleeper season", [2026, 2025, 2024], index=0, key="sleeper_season")
+
+    if st.button("Find My Leagues", key="find_leagues"):
+        if not username:
+            st.warning("Enter your Sleeper username.")
         else:
-            st.success(f"User ID found: {user_id}")
-            leagues = get_leagues(user_id, season)
-            if isinstance(leagues, str) and leagues.startswith("Error"):
-                st.error(leagues)
-            elif not leagues:
-                st.warning("No leagues found for this user and season.")
+            user_id = get_user_id(username)
+            if isinstance(user_id, str) and user_id.startswith("Error"):
+                st.error(user_id)
             else:
-                st.session_state["leagues"] = leagues
+                st.success(f"User ID found: {user_id}")
+                leagues = get_leagues(user_id, season)
+                if isinstance(leagues, str) and leagues.startswith("Error"):
+                    st.error(leagues)
+                elif not leagues:
+                    st.warning("No leagues found for this user and season.")
+                else:
+                    st.session_state["leagues"] = leagues
 
-if "leagues" in st.session_state:
-    leagues = st.session_state["leagues"]
-    selected_league_name = st.selectbox("Select a league", list(leagues.keys()), key="selected_league_name")
-    selected_league_id = leagues[selected_league_name]
-    st.write("Selected League ID:", selected_league_id)
-    if st.button("View Rosters", key="view_rosters"):
-        rosters = get_all_rosters(selected_league_id)
-        if isinstance(rosters, str) and rosters.startswith("Error"):
-            st.error(rosters)
-        else:
-            st.subheader("League Rosters")
-            st.json(rosters)
+    if "leagues" in st.session_state:
+        leagues = st.session_state["leagues"]
+        selected_league_name = st.selectbox("Select a league", list(leagues.keys()), key="selected_league_name")
+        selected_league_id = leagues[selected_league_name]
+        st.write("Selected League ID:", selected_league_id)
+        if st.button("View Rosters", key="view_rosters"):
+            rosters = get_all_rosters(selected_league_id)
+            if isinstance(rosters, str) and rosters.startswith("Error"):
+                st.error(rosters)
+            else:
+                st.subheader("League Rosters")
+                st.json(rosters)
+
+
+tab_search, tab_compare, tab_sleeper = st.tabs(["Stat Search", "Compare Players", "Sleeper"])
+
+with tab_search:
+    run_stat_search()
+
+with tab_compare:
+    run_compare()
+
+with tab_sleeper:
+    run_sleeper()
