@@ -50,6 +50,15 @@ try:
     # raises on its own. Alias it in sys.modules before importing so the
     # relative import resolves, without touching that file.
     from nflreadpy import utils_date as _nflreadpy_utils_date
+
+    sys.modules.setdefault("nflreadpy.old_nfl_files.utils_date", _nflreadpy_utils_date)
+    from nflreadpy.old_nfl_files.load_snap_counts import load_snap_counts
+except Exception as exc:
+    st.error(f"Unable to import nflreadpy UI helpers: {exc}")
+    st.stop()
+
+st.set_page_config(page_title="Fantasy Football Stat Explorer", layout="wide")
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
 
@@ -188,25 +197,6 @@ def show_roster(roster):
             )
 
 
-st.title("Fantasy Pathfinder")
-
-st.markdown(
-    """
-    <hr style="border: 1px solid #ccc;">
-    """,
-    unsafe_allow_html=True,
-)
-
-    sys.modules.setdefault("nflreadpy.old_nfl_files.utils_date", _nflreadpy_utils_date)
-    from nflreadpy.old_nfl_files.load_snap_counts import load_snap_counts
-except Exception as exc:
-    st.error(f"Unable to import nflreadpy UI helpers: {exc}")
-    st.stop()
-
-from sleeper_connect import get_user_id, get_leagues, get_all_rosters
-
-st.set_page_config(page_title="Fantasy Football Stat Explorer", layout="wide")
-
 st.title("NFL Stat Finder")
 st.markdown(
     "Search recent nflreadpy player stats with splits, comparisons, and Sleeper league integration."
@@ -221,9 +211,6 @@ st.markdown(
 # columns (passing/rushing/receiving) for each bucket. Sections that need data
 # we don't load (play-by-play for "last 2 min"/longest play, depth charts for
 # starter status) are intentionally omitted.
-
-username = st.text_input("Sleeper Username")
-season = st.selectbox("Season", [2026, 2025, 2024], index=0)
 
 def _passer_rating(cmp_: float, att: float, yds: float, td: float, interceptions: float) -> float:
     if not att:
@@ -829,8 +816,6 @@ def render_comparison(comparison: dict[str, Any]) -> str:
     fpts_rows = stat_row("Season Total", [p["fpts_total"] for p in players]) + stat_row(
         "Season Avg", [p["fpts_avg"] for p in players]
     )
-    selected_league_name = st.selectbox("Select a league", list(leagues.keys()))
-    selected_league_id = leagues[selected_league_name]
 
     group_sections = []
     for group in groups:
@@ -1466,6 +1451,7 @@ def run_sleeper():
             if isinstance(user_id, str) and user_id.startswith("Error"):
                 st.error(user_id)
             else:
+                st.session_state["user_id"] = user_id
                 st.success(f"User ID found: {user_id}")
                 leagues = get_leagues(user_id, season)
                 if isinstance(leagues, str) and leagues.startswith("Error"):
@@ -1485,21 +1471,7 @@ def run_sleeper():
             if isinstance(rosters, str) and rosters.startswith("Error"):
                 st.error(rosters)
             else:
-                st.subheader("League Rosters")
-                st.json(rosters)
-
-
-tab_search, tab_compare, tab_sleeper = st.tabs(["Stat Search", "Compare Players", "Sleeper"])
-
-with tab_search:
-    run_stat_search()
-
-with tab_compare:
-    run_compare()
-
-with tab_sleeper:
-    run_sleeper()
-            st.session_state["rosters"] = rosters
+                st.session_state["rosters"] = rosters
 
     if "rosters" in st.session_state:
         rosters = st.session_state["rosters"]
@@ -1521,9 +1493,21 @@ with tab_sleeper:
             show_roster(user_roster)
             st.divider()
 
-        for i, roster in enumerate(other_rosters):
+        for roster in other_rosters:
             owner = roster.get("owner_id", "Unknown")
             owner_name = cached_user_name(owner) if owner != "Unknown" else "Unknown"
 
             with st.expander(f"Team {owner_name}"):
                 show_roster(roster)
+
+
+tab_search, tab_compare, tab_sleeper = st.tabs(["Stat Search", "Compare Players", "Sleeper"])
+
+with tab_search:
+    run_stat_search()
+
+with tab_compare:
+    run_compare()
+
+with tab_sleeper:
+    run_sleeper()
