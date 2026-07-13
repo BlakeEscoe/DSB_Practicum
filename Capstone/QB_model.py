@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime
-
+import numpy as np
 import pandas as pd
 
 
@@ -19,7 +19,6 @@ QB_MODEL_FILE = DATA_DIR / "qb_model_dataset.csv"
 # =====================================================
 # Safe Save Function
 # =====================================================
-
 
 def safe_to_csv(df, path):
     try:
@@ -42,20 +41,37 @@ main_df = pd.read_csv(INPUT_FILE, low_memory=False)
 print("Loaded main dataset")
 print("Rows:", len(main_df))
 
+# =====================================================
+# Clean Dataset
+# =====================================================
+main_df['opponent_team'] = np.select([main_df['team_player_stats'] == main_df['away_team_player_stats'],
+                                      main_df['team_player_stats'] == main_df['away_team_player_stats']],
+                                     [main_df['home_team_player_stats'], main_df['away_team_player_stats']],
+                                     default=np.nan,
+                                     )
+
+main_df['opponent_team'] = 
 
 # =====================================================
 # Filter to Quarterbacks
 # =====================================================
 
 qb_df = main_df[main_df["position_player_stats"] == "QB"].copy()
-
 qb_df = qb_df.dropna(subset=["player_id", "fantasy_points"]).copy()
 qb_df["player_id"] = qb_df["player_id"].astype(str).str.strip()
 
 print("\nQB rows after dropping missing player_id:")
 print(len(qb_df))
 
-# =====================================================
+qb_df.head(20)
+main_df.head(20)
+main_df[['game_id', 'season', 'week','team_player_stats', 'opponent_team', 'wind_player_stats', 'temp_player_stats']].head(20)
+main_df[['wind_player_stats', 'temp_player_stats']].isna().sum()
+main_df[['game_id', 'season', 'week', 'team_player_stats', 'opponent_team',  'away_team_player_stats', 'home_team_player_stats']].isna().sum()
+main_df[main_df['opponent_team'].isna()][['game_id', 'season', 'week', 'team_player_stats', 'opponent_team', 'away_team_player_stats', 'home_team_player_stats']]
+
+main_df[main_df['game_id'].isna()][['game_id', 'season', 'week', 'team_player_stats', 'opponent_team', 'away_team_player_stats', 'home_team_player_stats']].isna().sum()
+main_df[main_df['game_id'].isna()][['game_id', 'season', 'week', 'team_player_stats', 'opponent_team', 'away_team_player_stats', 'home_team_player_stats']].isna().sum()
 # Convert Important Columns to Numeric
 # =====================================================
 
