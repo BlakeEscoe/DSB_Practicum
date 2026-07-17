@@ -64,8 +64,15 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 
 @st.cache_data
 def load_player_lookup():
+    # This CSV is useful when we have a local player lookup file.
+    # If it is missing, return an empty dictionary so the app can keep running
+    # and use the Sleeper API lookup as a fallback.
+    lookup_path = DATA_DIR / "main_df_with_sleeper_ids.csv"
+    if not lookup_path.exists():
+        return {}
+
     players_df = pd.read_csv(
-        DATA_DIR / "main_df_with_sleeper_ids.csv",
+        lookup_path,
         usecols=[
             "sleeper_id",
             "player_display_name",
