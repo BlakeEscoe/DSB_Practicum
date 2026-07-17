@@ -1508,13 +1508,21 @@ def run_sleeper():
                 show_roster(roster)
 
 
-tab_search, tab_compare, tab_sleeper = st.tabs(["Stat Search", "Compare Players", "Sleeper"])
+# st.tabs renders every tab's content into the DOM on every rerun and only
+# CSS-hides the inactive panels, which some Chromium/Edge builds fail to keep
+# clipped once the page grows tall (e.g. a Sleeper account with several
+# leagues) - the hidden panels bleed through below the active one. A manual
+# selector sidesteps that by only ever calling the active section's function.
+selected_section = st.radio(
+    "Section",
+    ["Stat Search", "Compare Players", "Sleeper"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
-with tab_search:
+if selected_section == "Stat Search":
     run_stat_search()
-
-with tab_compare:
+elif selected_section == "Compare Players":
     run_compare()
-
-with tab_sleeper:
+else:
     run_sleeper()
