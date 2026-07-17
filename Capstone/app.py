@@ -30,6 +30,7 @@ from sleeper_connect import (
     get_user_name,
     nfl_player_ids,
 )
+from optimizers.draft_optimizer import rank_players
 import pandas as pd
 from pathlib import Path
 
@@ -1508,6 +1509,59 @@ def run_sleeper():
                 show_roster(roster)
 
 
+def run_draft_optimizer():
+    st.subheader("Draft Optimizer")
+    st.caption(
+        "Sample projections are being used until the full model output is connected."
+    )
+
+    predictions_path = Path(__file__).resolve().parent / "data" / "sample_player_predictions.csv"
+    if not predictions_path.exists():
+        st.warning("Sample player projections are not available yet.")
+        return
+
+    players = pd.read_csv(predictions_path)
+    drafted_players = st.multiselect(
+        "Players already drafted.",
+        options=players["player"].tolist(),
+    )
+    position = st.selectbox(
+        "Rank by position",
+        options=["All Positions", *sorted(players["position"].dropna().unique())],
+    )
+    ranked_players = rank_players(players, drafted_players)
+    if position != "All Positions":
+        ranked_players = ranked_players[ranked_players["position"] == position]
+
+    with st.expander("Column guide"):
+        st.markdown(
+            """
+- **Player:** The player's name.
+- **Position:** The player's fantasy position, such as QB, RB, WR, or TE.
+- **Team:** The player's current NFL team abbreviation.
+- **Predicted Points:** The player's estimated fantasy points from the sample projections.
+- **Replacement Points:** The expected points from a readily available player at the same position.
+- **Value Over Replacement:** How many more points the player is projected to score than a replacement-level option. Higher is better.
+"""
+        )
+
+    display_players = ranked_players.rename(
+        columns={
+            "player": "Player",
+            "position": "Position",
+            "team": "Team",
+            "predicted_points": "Predicted Points",
+            "replacement_points": "Replacement Points",
+            "value_over_replacement": "Value Over Replacement",
+        }
+    )
+    st.dataframe(
+        pl.from_pandas(display_players),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
 # st.tabs renders every tab's content into the DOM on every rerun and only
 # CSS-hides the inactive panels, which some Chromium/Edge builds fail to keep
 # clipped once the page grows tall (e.g. a Sleeper account with several
@@ -1515,7 +1569,7 @@ def run_sleeper():
 # selector sidesteps that by only ever calling the active section's function.
 selected_section = st.radio(
     "Section",
-    ["Stat Search", "Compare Players", "Sleeper"],
+    ["Stat Search", "Compare Players", "Sleeper", "Draft Optimizer"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -1524,5 +1578,7 @@ if selected_section == "Stat Search":
     run_stat_search()
 elif selected_section == "Compare Players":
     run_compare()
-else:
+elif selected_section == "Sleeper":
     run_sleeper()
+else:
+    run_draft_optimizer()
