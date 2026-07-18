@@ -59,7 +59,7 @@ except Exception as exc:
     st.error(f"Unable to import nflreadpy UI helpers: {exc}")
     st.stop()
 
-st.set_page_config(page_title="Fantasy Football Stat Explorer", layout="wide")
+st.set_page_config(page_title="Fantasy Pathfinder", layout="wide")
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -206,7 +206,7 @@ def show_roster(roster):
             )
 
 
-st.title("NFL Stat Finder")
+st.title("Fantasy Pathfinder")
 st.markdown(
     "Search recent nflreadpy player stats with splits, comparisons, and Sleeper league integration."
 )
@@ -311,7 +311,7 @@ SPLIT_SECTION_DEFS: list[tuple[str, str, list[str]]] = [
     ("VICTORY MARGIN", "victory_margin", ["0-7", "8-14", "15+"]),
     ("SEASON GAMES", "season_game_block", ["1-8", "9-16"]),
     ("MONTH", "month", ["September", "October", "November", "December", "January", "February"]),
-    ("DAY", "day_bucket", ["Sunday", "Monday", "Other"]),
+    ("DAY", "day_bucket", ["Sunday", "Monday", "Short Week (Tuesday-Friday)", "Other"]),
     ("SURFACE", "surface_bucket", ["Grass", "Turf"]),
     ("LOCATION", "roof_label", ["Outdoors", "Indoors"]),
     ("WEATHER", "temperature_category", ["<40 F", "40-80 F", "81+ F"]),
@@ -401,6 +401,8 @@ def _derive_split_buckets(player_rows: pl.DataFrame) -> pl.DataFrame:
             .then(pl.lit("Sunday"))
             .when(pl.col("weekday") == "Monday")
             .then(pl.lit("Monday"))
+            .when(pl.col("weekday").is_in(["Tuesday", "Wednesday", "Thursday", "Friday"]))
+            .then(pl.lit("Short Week (Tuesday-Friday)"))
             .otherwise(pl.lit("Other"))
             .alias("day_bucket")
         )
@@ -640,7 +642,7 @@ def render_splits_chart(splits: dict[str, Any]) -> None:
         return
 
     section_labels = [s["label"] for s in sections]
-    selected_label = st.selectbox("Chart split", section_labels, key="splits_chart_section")
+    selected_label = st.selectbox("Chart Split", section_labels, key="splits_chart_section")
     section = next(s for s in sections if s["label"] == selected_label)
 
     chart_df = pd.DataFrame(
@@ -941,7 +943,7 @@ def render_comparison_chart(comparison: dict[str, Any]) -> None:
 
     labels = [label for label, _, _ in metric_options]
     selected_label = st.selectbox(
-        "Chart stat", labels, index=1, key="compare_chart_metric"
+        "Chart Stat", labels, index=1, key="compare_chart_metric"
     )
     _, chart_group, chart_key = next(m for m in metric_options if m[0] == selected_label)
 
@@ -1484,10 +1486,10 @@ def render_result(answer: dict[str, any]) -> None:
 
     projection = answer.get("projection")
     if projection:
-        with st.expander("Projection details", expanded=True):
+        with st.expander("Projection Details", expanded=True):
             st.metric("Projection", projection.get("projection"))
-            st.metric("Recent average", projection.get("recent_average"))
-            st.metric("Sample average", projection.get("sample_average"))
+            st.metric("Recent Average", projection.get("recent_average"))
+            st.metric("Sample Average", projection.get("sample_average"))
             st.metric("Trend", projection.get("direction"))
             st.write(projection.get("method"))
 
@@ -1511,7 +1513,7 @@ def render_result(answer: dict[str, any]) -> None:
         st.info("No rows available for this query.")
 
     if has_game_log:
-        st.write("#### Game log (Sleeper standard PPR)")
+        st.write("#### Game Log (Sleeper Standard PPR)")
         table_html = render_game_log_table(game_log)
         if table_html:
             st.markdown(table_html, unsafe_allow_html=True)
@@ -1520,12 +1522,12 @@ def render_result(answer: dict[str, any]) -> None:
 
     breakdown = answer.get("fpts_breakdown")
     if breakdown:
-        st.write("#### Fantasy points by category")
+        st.write("#### Fantasy Points By Category")
         render_fpts_breakdown_chart(breakdown)
 
     splits = answer.get("splits")
     if splits and splits.get("sections"):
-        st.write("#### Stat splits")
+        st.write("#### Stat Splits")
         table_html = render_splits_table(splits)
         if table_html:
             st.markdown(table_html, unsafe_allow_html=True)
@@ -1591,7 +1593,7 @@ def run_stat_search():
     ) or ""
 
     compare_mode = st.toggle(
-        "Compare players",
+        "Compare Players",
         key="compare_mode_toggle",
         help="Add up to 2 more players to compare against your search above.",
     )
@@ -1694,8 +1696,8 @@ def run_stat_search():
 
 
 def run_sleeper():
-    username = st.text_input("Sleeper username for league lookup", value="")
-    season = st.selectbox("Sleeper season", [2026, 2025, 2024], index=0, key="sleeper_season")
+    username = st.text_input("Sleeper Username For League Lookup", value="")
+    season = st.selectbox("Sleeper Season", [2026, 2025, 2024], index=0, key="sleeper_season")
 
     if st.button("Find My Leagues", key="find_leagues"):
         if not username:
@@ -1717,7 +1719,7 @@ def run_sleeper():
 
     if "leagues" in st.session_state:
         leagues = st.session_state["leagues"]
-        selected_league_name = st.selectbox("Select a league", list(leagues.keys()), key="selected_league_name")
+        selected_league_name = st.selectbox("Select A League", list(leagues.keys()), key="selected_league_name")
         selected_league_id = leagues[selected_league_name]
         st.write("Selected League ID:", selected_league_id)
         if st.button("View Rosters", key="view_rosters"):
@@ -1768,18 +1770,18 @@ def run_draft_optimizer():
 
     players = pd.read_csv(predictions_path)
     drafted_players = st.multiselect(
-        "Players already drafted.",
+        "Players Already Drafted",
         options=players["player"].tolist(),
     )
     position = st.selectbox(
-        "Rank by position",
+        "Rank By Position",
         options=["All Positions", *sorted(players["position"].dropna().unique())],
     )
     ranked_players = rank_players(players, drafted_players)
     if position != "All Positions":
         ranked_players = ranked_players[ranked_players["position"] == position]
 
-    with st.expander("Column guide"):
+    with st.expander("Column Guide"):
         st.markdown(
             """
 - **Player:** The player's name.
