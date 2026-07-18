@@ -426,12 +426,138 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups)
 
     return trades
 
+def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_lineups):
+    current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
+
+    team_a_players = current_lineups[
+        current_lineups["roster_id"] == team_id
+        ]
+
+    positions = ["QB", "RB", "WR", "TE"]
+
+    trades = []
+
+    for position in positions:
+        target_value = team_a_players[
+            (team_a_players["position"] == position) &
+            (team_a_players["starting"])
+            ]["ppr_ppg"].min()
+
+        player_to_be_traded = team_a_players[(team_a_players["position"] == position) &
+                    (team_a_players["ppr_ppg"] == target_value)]
+
+        trade_candidates = team_a_players[
+            (team_a_players["position"] != position) |
+            (
+                    (team_a_players["position"] == position) &
+                    (team_a_players["ppr_ppg"] < target_value)
+            )
+            ]
+
+        for team_b_id in current_lineups["roster_id"].unique():
+            if team_b_id == team_id:
+                continue
+
+            trade_target = (
+                current_lineups[
+                    (current_lineups["roster_id"] == team_b_id) &
+                    (current_lineups["position"] == position) &
+                    (current_lineups["ppr_ppg"] > target_value)
+                    ][
+                    ["fantasy_team", "player_name", "position", "starting", "ppr_ppg"]
+                ]
+                .nsmallest(1, "ppr_ppg")
+            )
+
+            if trade_target.empty:
+                continue
+
+            trade_target_name = trade_target["player_name"].iloc[0]
+
+            other_team_b_players = current_lineups[
+                (current_lineups["roster_id"] == team_b_id) &
+                (current_lineups["starting"]) &
+                (current_lineups["player_name"] != trade_target_name)
+                ][
+                ["fantasy_team", "player_name", "position", "starting", "ppr_ppg"]
+            ]
+
+
+            for _, player in other_team_b_players.iterrows():
+                position_2 = player["position"]
+                trade_target_packages = []
+
+                package = pd.concat(
+                    [
+                        trade_target,
+                        player.to_frame().T
+                    ],
+                    ignore_index=True
+                )
+
+                trade_target_packages.append({
+                    "fantasy team": ", ".join(package["fantasy_team"].unique()),
+                    "players": ", ".join(package["player_name"]),
+                    "position": ", ".join(package["position"]),
+                    "starting": ", ".join(package["starting"].astype(str)),
+                    "ppr_ppg": package["ppr_ppg"].sum()
+                })
+
+                team_b_sent_value = player["ppr_ppg"] + trade_target["ppr_ppg"].iloc[0]
+
+                team_a_eligible_players = trade_candidates[(trade_candidates["position"] == position_2) & (~(trade_candidates["starting"]) |
+                                                            (trade_candidates["ppr_ppg"] + target_value < team_b_sent_value))]
+
+                team_a_packages = []
+
+                for _, player_a in team_a_eligible_players.iterrows():
+                    package = pd.concat(
+                        [
+                            player_to_be_traded,
+                            player_a.to_frame().T
+                        ],
+                        ignore_index=True
+                    )
+
+                    team_a_packages.append({
+                        "fantasy team": ", ".join(package["fantasy_team"].unique()),
+                        "players": ", ".join(package["player_name"]),
+                        "position": ", ".join(package["position"]),
+                        "starting": ", ".join(package["starting"].astype(str)),
+                        "ppr_ppg": package["ppr_ppg"].sum()
+                    })
+
+
+                team_a_packages = pd.DataFrame(team_a_packages)
+                trade_target_packages = pd.DataFrame(trade_target_packages)
+
+                print("")
+                print(player_to_be_traded)
+                print(trade_target)
+                print(team_a_packages)
+                print(trade_target_packages)
+
+                if team_a_packages.empty or trade_target_packages.empty:
+                    continue
+
+                trades.extend(
+                    team_a_packages.merge(
+                        trade_target_packages,
+                        how="cross",
+                        suffixes=("_team_a", "_team_b")
+                    ).to_dict("records")
+                )
+
+    return pd.DataFrame(trades)
+
 
 optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920')
-get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
-get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
-get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
-get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
+#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
+#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
+#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
+#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
+
+get_trades_to_improve_both_starting_lineups(league_id='1319148515363921920', team_id=4, optimized_lineups=optimized_lineups).to_csv('trades.csv')
 
 """
 trades = find_mutually_beneficial_trades(
