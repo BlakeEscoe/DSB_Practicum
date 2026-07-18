@@ -36,6 +36,7 @@ import pandas as pd
 from pathlib import Path
 
 try:
+    import nflreadpy
     from nflreadpy.ui import (
         SearchConfig,
         answer_query,
