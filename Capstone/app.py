@@ -1759,6 +1759,126 @@ def run_sleeper():
             with st.expander(f"Team {owner_name}"):
                 show_roster(roster)
 
+    if "user_id" in st.session_state:
+        st.divider()
+
+        if st.button("Draft Optimizer", key="show_draft_optimizer"):
+            st.session_state["draft_optimizer_open"] = True
+
+        if st.session_state.get("draft_optimizer_open"):
+            with st.expander("Draft Optimizer", expanded=True):
+                run_draft_optimizer()
+
+        if st.button("Trade Finder", key="show_trade_finder"):
+            st.session_state["trade_finder_open"] = True
+
+        if st.session_state.get("trade_finder_open"):
+            with st.expander("Trade Finder", expanded=True):
+                run_trade_finder()
+
+
+@st.cache_data(ttl=300)
+def load_trade_recommendations(league_id, roster_id, min_gain):
+    from trades import find_mutually_beneficial_trades
+
+    return find_mutually_beneficial_trades(
+        league_id=league_id,
+        team_id=roster_id,
+        min_gain=min_gain,
+    )
+
+
+def get_selected_sleeper_league_id():
+    leagues = st.session_state.get("leagues")
+    selected_league_name = st.session_state.get("selected_league_name")
+
+    if not leagues or not selected_league_name:
+        return None
+
+    return leagues.get(selected_league_name)
+
+
+def get_user_roster_id(league_id):
+    user_id = st.session_state.get("user_id")
+    rosters = st.session_state.get("rosters")
+
+    if not user_id:
+        return None
+
+    if not rosters:
+        rosters = get_all_rosters(league_id)
+        if isinstance(rosters, str) and rosters.startswith("Error"):
+            st.warning(rosters)
+            return None
+
+        st.session_state["rosters"] = rosters
+
+    for roster in rosters:
+        if roster.get("owner_id") == user_id:
+            return roster.get("roster_id")
+
+    return None
+
+
+def run_trade_finder():
+    league_id = get_selected_sleeper_league_id()
+
+    if not league_id:
+        st.info("Select a Sleeper league first.")
+        return
+
+    roster_id = get_user_roster_id(league_id)
+
+    if roster_id is None:
+        st.warning("Could not find your roster in the selected league.")
+        return
+
+    st.write("Selected League ID:", league_id)
+    st.write("Your Roster ID:", roster_id)
+
+    min_gain = st.number_input(
+        "Minimum weekly gain for both teams",
+        min_value=0.0,
+        value=0.1,
+        step=0.1,
+    )
+
+    if not st.button("Find Trade Ideas", key="find_trade_ideas"):
+        return
+
+    try:
+        with st.spinner("Finding mutually beneficial trades..."):
+            trade_recommendations = load_trade_recommendations(
+                league_id,
+                roster_id,
+                min_gain,
+            )
+    except Exception as exc:
+        st.warning(f"Trade recommendations could not be loaded: {exc}")
+        return
+
+    if trade_recommendations.empty:
+        st.info("No mutually beneficial trades found with the current settings.")
+        return
+
+    display_trades = trade_recommendations.rename(
+        columns={
+            "team_a": "Your Team",
+            "team_b": "Trade Partner",
+            "team_a_gives": "You Give",
+            "team_b_gives": "You Receive",
+            "team_a_gain": "Your Weekly Gain",
+            "team_b_gain": "Partner Weekly Gain",
+            "combined_gain": "Combined Gain",
+        }
+    )
+
+    st.dataframe(
+        pl.from_pandas(display_trades),
+        hide_index=True,
+        use_container_width=True,
+    )
+
 
 def run_draft_optimizer():
     st.subheader("Draft Optimizer")
@@ -1820,14 +1940,12 @@ def run_draft_optimizer():
 # selector sidesteps that by only ever calling the active section's function.
 selected_section = st.radio(
     "Section",
-    ["Stat Search", "Sleeper", "Draft Optimizer"],
+    ["Stat Search", "Sleeper"],
     horizontal=True,
     label_visibility="collapsed",
 )
 
 if selected_section == "Stat Search":
     run_stat_search()
-elif selected_section == "Sleeper":
-    run_sleeper()
 else:
-    run_draft_optimizer()
+    run_sleeper()

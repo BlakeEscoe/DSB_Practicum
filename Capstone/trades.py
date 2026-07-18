@@ -567,25 +567,19 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
     return trades
 
 
-optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg")
-#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
-#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
-#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
-#get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
+if __name__ == "__main__":
+    optimized_lineups = lineups.optimize_starting_lineups(
+        '1319148515363921920',
+        scoring_parameters="actual_ppg"
+    )
+    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
+    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
+    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
+    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
 
-get_trades_to_improve_both_starting_lineups(league_id='1319148515363921920', team_id=4, optimized_lineups=optimized_lineups,scoring_parameters="actual_ppg").to_csv('trades.csv')
-
-"""
-trades = find_mutually_beneficial_trades(
-    league_id="1319148515363921920",
-    team_id=4,          # Sleeper roster_id for your team
-    min_gain=0        # Minimum weekly gain required for both teams
-)
-
-# Save results
-trades.to_csv(
-    "mutually_beneficial_trades.csv",
-    index=False
-)
-"""
-
+    get_trades_to_improve_both_starting_lineups(
+        league_id='1319148515363921920',
+        team_id=4,
+        optimized_lineups=optimized_lineups,
+        scoring_parameters="actual_ppg"
+    ).to_csv('trades.csv')
