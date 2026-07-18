@@ -21,10 +21,6 @@ def _flatten_html(markup: str) -> str:
     return "\n".join(line.lstrip() for line in markup.strip("\n").splitlines())
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = ROOT / "src"
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
 from sleeper_connect import (
     get_user_id,
     get_leagues,
