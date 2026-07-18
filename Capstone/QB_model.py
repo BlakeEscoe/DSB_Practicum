@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime
-
+import numpy as np
 import pandas as pd
 
 
@@ -42,18 +42,177 @@ main_df = pd.read_csv(INPUT_FILE, low_memory=False)
 print("Loaded main dataset")
 print("Rows:", len(main_df))
 
+# =====================================================
+# Clean Dataset
+# =====================================================
+game_id_parts = main_df["game_id"].str.split("_", n=3, expand=True)
+game_id_parts.columns = ["game_year", "game_week", "game_away_team", "game_home_team"]
+game_year = pd.to_numeric(game_id_parts["game_year"], errors="coerce")
+cleanup_year = game_year.combine_first(
+    pd.to_numeric(main_df["season"], errors="coerce")
+)
+
+
+def normalize_team_abbreviations(team_series, year_series):
+    # Team abbreviation cleanup for historical franchise moves.
+    cleaned_team_series = team_series.replace({"JAC": "JAX"})
+
+    cleaned_team_series.loc[year_series < 2020] = cleaned_team_series.loc[
+        year_series < 2020
+    ].replace({"LV": "OAK"})
+    cleaned_team_series.loc[year_series >= 2020] = cleaned_team_series.loc[
+        year_series >= 2020
+    ].replace({"OAK": "LV"})
+
+    cleaned_team_series.loc[year_series < 2017] = cleaned_team_series.loc[
+        year_series < 2017
+    ].replace({"LAC": "SD"})
+    cleaned_team_series.loc[year_series >= 2017] = cleaned_team_series.loc[
+        year_series >= 2017
+    ].replace({"SD": "LAC"})
+
+    cleaned_team_series.loc[year_series < 2016] = cleaned_team_series.loc[
+        year_series < 2016
+    ].replace({"LA": "STL"})
+    cleaned_team_series.loc[year_series >= 2016] = cleaned_team_series.loc[
+        year_series >= 2016
+    ].replace({"STL": "LA"})
+
+    return cleaned_team_series
+
+
+for team_col in ["game_away_team", "game_home_team"]:
+    game_id_parts[team_col] = normalize_team_abbreviations(
+        game_id_parts[team_col], cleanup_year
+    )
+
+main_df["away_team_player_stats"] = normalize_team_abbreviations(
+    main_df["away_team_player_stats"], cleanup_year
+)
+main_df["home_team_player_stats"] = normalize_team_abbreviations(
+    main_df["home_team_player_stats"], cleanup_year
+)
+main_df["team_player_stats"] = normalize_team_abbreviations(
+    main_df["team_player_stats"], cleanup_year
+)
+main_df["opponent_team"] = normalize_team_abbreviations(
+    main_df["opponent_team"], cleanup_year
+)
+
+has_game_id = main_df["game_id"].notna()
+main_df.loc[has_game_id, "game_id"] = (
+    game_id_parts.loc[has_game_id, "game_year"]
+    + "_"
+    + game_id_parts.loc[has_game_id, "game_week"]
+    + "_"
+    + game_id_parts.loc[has_game_id, "game_away_team"]
+    + "_"
+    + game_id_parts.loc[has_game_id, "game_home_team"]
+)
+main_df.loc[has_game_id, "away_team_player_stats"] = game_id_parts.loc[
+    has_game_id, "game_away_team"
+]
+main_df.loc[has_game_id, "home_team_player_stats"] = game_id_parts.loc[
+    has_game_id, "game_home_team"
+]
+
+main_df["opponent_team"] = np.select(
+    [
+        main_df["team_player_stats"] == main_df["away_team_player_stats"],
+        main_df["team_player_stats"] == main_df["home_team_player_stats"],
+    ],
+    [
+        main_df["home_team_player_stats"],
+        main_df["away_team_player_stats"],
+    ],
+    default=main_df["opponent_team"],
+)
+
+main_df[
+    ["game_id", "team_player_stats", "opponent_team", "home_team_player_stats"]
+].isna().sum()
+main_df[main_df["game_id"].isna()][
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "away_team_player_stats",
+        "home_team_player_stats",
+    ]
+].head(20)
 
 # =====================================================
 # Filter to Quarterbacks
 # =====================================================
 
 qb_df = main_df[main_df["position_player_stats"] == "QB"].copy()
-
 qb_df = qb_df.dropna(subset=["player_id", "fantasy_points"]).copy()
 qb_df["player_id"] = qb_df["player_id"].astype(str).str.strip()
 
 print("\nQB rows after dropping missing player_id:")
 print(len(qb_df))
+
+qb_df.head(20)
+main_df.head(20)
+main_df[
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "wind_player_stats",
+        "temp_player_stats",
+    ]
+].head(20)
+main_df[["wind_player_stats", "temp_player_stats"]].isna().sum()
+main_df[
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "away_team_player_stats",
+        "home_team_player_stats",
+    ]
+].isna().sum()
+main_df[main_df["opponent_team"].isna()][
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "away_team_player_stats",
+        "home_team_player_stats",
+    ]
+]
+
+main_df[main_df["game_id"].isna()][
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "away_team_player_stats",
+        "home_team_player_stats",
+    ]
+].isna().sum()
+main_df[main_df["game_id"].isna()][
+    [
+        "game_id",
+        "season",
+        "week",
+        "team_player_stats",
+        "opponent_team",
+        "away_team_player_stats",
+        "home_team_player_stats",
+    ]
+].isna().sum()
 
 # =====================================================
 # Convert Important Columns to Numeric
