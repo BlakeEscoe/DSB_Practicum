@@ -11,7 +11,6 @@ annotated-types==0.7.0
 certifi==2026.6.17
 charset-normalizer==3.4.9
 idna==3.18
--e git+https://github.com/deziharris6-cloud/DSB_7500_Practicum.git@0500162f282c78796960bac1a2b85ff351b20057#egg=nflreadpy
 numpy==2.5.1
 pandas==3.0.3
 platformdirs==4.10.0
