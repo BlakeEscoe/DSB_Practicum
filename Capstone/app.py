@@ -976,10 +976,7 @@ SPLIT_OPTIONS: dict[str, tuple[str, str]] = {
     "Day: Weekday": ("day", "weekday"),
     "Day: Weekend": ("day", "weekend"),
     "Day: Monday": ("day", "monday"),
-    "Day: Tuesday": ("day", "tuesday"),
-    "Day: Wednesday": ("day", "wednesday"),
-    "Day: Thursday": ("day", "thursday"),
-    "Day: Friday": ("day", "friday"),
+    "Day: Short Week (Tuesday-Friday)": ("day", "short_week"),
     "Day: Saturday": ("day", "saturday"),
     "Day: Sunday": ("day", "sunday"),
     "Time of day: Europe": ("time_of_day", "europe"),
@@ -1679,10 +1676,16 @@ def run_stat_search():
 
                 if answer.get("type") == "player":
                     parsed_seasons = parse_seasons(seasons)
+                    # The Stat Splits table is meant to show the full multi-way
+                    # breakdown (Home/Away, Day, Weather, ...) across every game,
+                    # so it stays on the unfiltered df - pre-filtering it down to
+                    # one split value would collapse most of its own sections.
+                    # The split dropdown's job (per its own comment above) is to
+                    # drive the game log specifically, so that one uses filtered_df.
                     splits = compute_player_splits(df, answer["title"])
                     if splits:
                         answer["splits"] = splits
-                    game_log = compute_game_log(df, answer["title"], parsed_seasons)
+                    game_log = compute_game_log(filtered_df, answer["title"], parsed_seasons)
                     if game_log:
                         answer["game_log"] = game_log
                     breakdown = compute_fpts_breakdown(df, answer["title"])

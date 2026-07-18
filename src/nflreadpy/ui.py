@@ -930,24 +930,35 @@ def _apply_split_filters(df: pl.DataFrame, params: dict[str, list[str]]) -> pl.D
             df = df.filter(pl.col("weather").str.to_lowercase().str.contains(normalized))
 
     # Day filter
+    # dt.weekday() on this polars version returns ISO weekday numbers
+    # (Monday=1 ... Sunday=7), not the 0=Monday..6=Sunday scheme this
+    # mapping used to assume - that mismatch made every "Day: X" option
+    # either match nothing (Monday's old code 0 is not a valid ISO value)
+    # or silently match the wrong day (old "sunday": 6 actually matched
+    # Saturday). Verified against real data: ISO 7 is by far the most
+    # common code, matching Sunday being the NFL's primary game day.
     day = params.get("day", [None])[0]
     if day and has("game_date"):
       try:
-        dow = pl.col("game_date").str.strptime(pl.Date, fmt="%Y-%m-%d").dt.weekday()
+        dow = pl.col("game_date").str.strptime(pl.Date, format="%Y-%m-%d").dt.weekday()
         name = day.lower()
         if name in ("weekday", "weekdays"):
-          df = df.filter(dow.is_in([0, 1, 2, 3, 4]))
+          df = df.filter(dow.is_in([1, 2, 3, 4, 5]))
         elif name in ("weekend", "weekends"):
-          df = df.filter(dow.is_in([5, 6]))
+          df = df.filter(dow.is_in([6, 7]))
+        elif name in ("short_week", "short week"):
+          # Tuesday-Friday, mirroring the "Short Week (Tuesday-Friday)" bucket
+          # in the Stat Splits table's DAY section.
+          df = df.filter(dow.is_in([2, 3, 4, 5]))
         else:
           mapping = {
-            "monday": 0,
-            "tuesday": 1,
-            "wednesday": 2,
-            "thursday": 3,
-            "friday": 4,
-            "saturday": 5,
-            "sunday": 6,
+            "monday": 1,
+            "tuesday": 2,
+            "wednesday": 3,
+            "thursday": 4,
+            "friday": 5,
+            "saturday": 6,
+            "sunday": 7,
           }
           if name in mapping:
             df = df.filter(dow == mapping[name])
