@@ -1,5 +1,6 @@
 import lineups
 import pandas as pd
+from itertools import combinations
 
 def calculate_trade_impact(
     roster_before,
@@ -121,6 +122,71 @@ def get_worst_starters(team, starting_positions, num_players=3):
         )
     ]
 
+def get_trade_candidates(
+    team,
+    starting_positions,
+    num_worst_starters=4,
+    num_best_bench=2
+):
+    """
+    Returns likely trade candidates:
+      - Worst projected starters (excluding K)
+      - Best projected bench players
+    """
+
+    lineup, _ = lineups.optimize_single_roster(
+        team,
+        starting_positions
+    )
+
+    starters = lineup[
+        lineup["starting"]
+    ].copy()
+
+    bench = lineup[
+        ~lineup["starting"]
+    ].copy()
+
+    # Ignore kickers
+    starters = starters[
+        starters["position"] != "K"
+    ]
+
+    bench = bench[
+        bench["position"] != "K"
+    ]
+
+    worst_starters = (
+        starters
+        .sort_values(
+            "projected_points",
+            ascending=True
+        )
+        .head(num_worst_starters)
+    )
+
+    best_bench = (
+        bench
+        .sort_values(
+            "projected_points",
+            ascending=False
+        )
+        .head(num_best_bench)
+    )
+
+    candidates = pd.concat(
+        [worst_starters, best_bench]
+    ).drop_duplicates(
+        subset="player_id"
+    )
+
+    return team[
+        team["player_id"].isin(
+            candidates["player_id"]
+        )
+    ]
+
+
 def find_mutually_beneficial_trades(
     league_id,
     team_id,
@@ -145,28 +211,16 @@ def find_mutually_beneficial_trades(
     team_a_id = team_id
     team_a = teams[team_a_id]
 
-
-    trade_candidates = get_worst_starters(
+    trade_candidates = get_trade_candidates(
         team_a,
         starting_positions,
-        num_players=2
+        num_worst_starters=1,
+        num_best_bench=1
     )
-
-    lineup, _ = lineups.optimize_single_roster(
-        team_a,
-        starting_positions
-    )
-
-    starters = lineup[
-        lineup["starting"]
-    ].copy()
-
-    # Exclude kickers
-    trade_candidates = starters[
-        starters["position"] != "K"
-    ]
 
     possible_trades = []
+
+    counter = 0
 
     # Compare team_a against every other team
     for team_b_id, team_b in teams.items():
@@ -175,17 +229,58 @@ def find_mutually_beneficial_trades(
             continue
 
         # Try only the weak starters from team_a
-        for _, player_a in trade_candidates.iterrows():
+        # Build all 1-player and 2-player packages
 
-            for _, player_b in team_b.iterrows():
+        team_a_packages = []
 
-                players_to_team_a = pd.DataFrame(
-                    [player_b]
-                )
+        # 1-for-1 candidates
+        for _, player in trade_candidates.iterrows():
+            team_a_packages.append(
+                trade_candidates[
+                    trade_candidates["player_id"] == player["player_id"]
+                    ]
+            )
 
-                players_to_team_b = pd.DataFrame(
-                    [player_a]
-                )
+        # 2-player packages
+        for combo in combinations(
+                trade_candidates.index,
+                2
+        ):
+            team_a_packages.append(
+                trade_candidates.loc[list(combo)]
+            )
+
+        team_b_candidates = get_trade_candidates(
+            team_b,
+            starting_positions,
+            num_worst_starters=2,
+            num_best_bench=0
+        )
+
+        team_b_packages = []
+
+        # 1-player packages
+        for _, player in team_b_candidates.iterrows():
+            team_b_packages.append(
+                team_b_candidates[
+                    team_b_candidates["player_id"] == player["player_id"]
+                    ]
+            )
+
+        # 2-player packages
+        for combo in combinations(
+                team_b_candidates.index,
+                2
+        ):
+            team_b_packages.append(
+                team_b_candidates.loc[list(combo)]
+            )
+
+        for players_to_team_b in team_a_packages:
+
+            for players_to_team_a in team_b_packages:
+
+                counter += 1
 
                 result = evaluate_trade(
                     team_a,
@@ -198,21 +293,24 @@ def find_mutually_beneficial_trades(
                 gain_a = result["team_a"]["weekly_gain"]
                 gain_b = result["team_b"]["weekly_gain"]
 
-                # Both teams improve
-                if (gain_a >= min_gain
-                    and gain_b >= min_gain
-                ):
-
+                if gain_a >= min_gain and gain_b >= min_gain:
                     possible_trades.append({
 
-                        "team_a": team_a.iloc[0]["fantasy_team"],
-                        "team_b": team_b.iloc[0]["fantasy_team"],
+                        "team_a":
+                            team_a.iloc[0]["fantasy_team"],
+
+                        "team_b":
+                            team_b.iloc[0]["fantasy_team"],
 
                         "team_a_gives":
-                            player_a["player_name"],
+                            ", ".join(
+                                players_to_team_b["player_name"]
+                            ),
 
                         "team_b_gives":
-                            player_b["player_name"],
+                            ", ".join(
+                                players_to_team_a["player_name"]
+                            ),
 
                         "team_a_gain":
                             round(gain_a, 2),
@@ -224,9 +322,13 @@ def find_mutually_beneficial_trades(
                             round(
                                 gain_a + gain_b,
                                 2
-                            )
+                            ),
+
+                        "players_each":
+                            len(players_to_team_a)
                     })
 
+    print(counter)
 
     if not possible_trades:
         return pd.DataFrame()
@@ -241,10 +343,101 @@ def find_mutually_beneficial_trades(
         .reset_index(drop=True)
     )
 
+def get_best_trades_by_position(league_id, team_id, position, optimized_lineups):
+    current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
+
+    current_lineups["weight"] = current_lineups["ppr_ppg"] * (
+            1 + 2 * current_lineups["starting"].astype(int)
+    )
+
+    team_a_players = current_lineups[
+        current_lineups["roster_id"] == team_id
+        ]
+
+    target_value = team_a_players[
+        (team_a_players["position"] == position) &
+        (team_a_players["starting"])
+        ]["ppr_ppg"].min()
+
+    trade_candidates = team_a_players[
+        (team_a_players["position"] != position) |
+        (
+                (team_a_players["position"] == position) &
+                (team_a_players["ppr_ppg"] <= target_value)
+        )
+        ]
+
+    trade_targets = current_lineups[
+        (current_lineups["roster_id"] != team_id) &
+        (current_lineups["position"] == position) &
+        (current_lineups["ppr_ppg"] > target_value)
+        ][
+        ["fantasy_team", "player_name", "position", "starting", "ppr_ppg", "weight"]
+    ]
+
+    team_a_packages = []
+
+    # 1-player packages
+    for idx in trade_candidates.index:
+        package = trade_candidates.loc[[idx]]
+
+        team_a_packages.append({
+            "fantasy_team": package["fantasy_team"].iloc[0],
+            "players": ", ".join(package["player_name"]),
+            "position": ", ".join(package["position"]),
+            "starting": package["starting"].iloc[0],
+            "ppg": package["ppr_ppg"].sum(),
+            "weight": package["weight"].sum()
+        })
+
+    # 2-player packages
+    for combo in combinations(trade_candidates.index, 2):
+        package = trade_candidates.loc[list(combo)]
+
+        team_a_packages.append({
+            "fantasy_team": ", ".join(package["fantasy_team"].unique()),
+            "players": ", ".join(package["player_name"]),
+            "position": ", ".join(package["position"]),
+            "starting": ", ".join(package["starting"].astype(str)),
+            "ppg": package["ppr_ppg"].sum(),
+            "weight": package["weight"].sum()
+        })
+
+    team_a_packages = pd.DataFrame(team_a_packages)
+
+    trades = team_a_packages.merge(
+        trade_targets,
+        how="cross",
+        suffixes=("_team_a", "_team_b")
+    )
+
+    trades["weight_diff"] = trades["weight_team_a"] - trades["weight_team_b"]
+
+    trades = (
+        trades[
+            (trades["weight_diff"] >= 0) &
+            (trades["ppg"]/trades["ppr_ppg"] <= 1.3)
+            ]
+        .sort_values(
+            "weight_diff",
+            ascending=True
+        )
+    )
+
+    return trades
+
+
+optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920')
+get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
+get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
+get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
+get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
+
+"""
 trades = find_mutually_beneficial_trades(
     league_id="1319148515363921920",
     team_id=4,          # Sleeper roster_id for your team
-    min_gain=0.1        # Minimum weekly gain required for both teams
+    min_gain=0        # Minimum weekly gain required for both teams
 )
 
 # Save results
@@ -252,3 +445,5 @@ trades.to_csv(
     "mutually_beneficial_trades.csv",
     index=False
 )
+"""
+
