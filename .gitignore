@@ -74,7 +74,9 @@ Thumbs.db
 .uv_cache/
  
 # Generated data
-Capstone/data/
+Capstone/data/*
+!Capstone/data/all_2025_predictions.csv
+
 Capstone/contracts.csv
 Capstone/player_stats.csv
 Capstone/schedules.csv
