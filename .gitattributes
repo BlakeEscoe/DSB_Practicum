@@ -1,0 +1,4 @@
+Capstone/contracts.csv filter=lfs diff=lfs merge=lfs -text
+Capstone/player_stats.csv filter=lfs diff=lfs merge=lfs -text
+Capstone/schedules.csv filter=lfs diff=lfs merge=lfs -text
+Capstone/team_stats.csv filter=lfs diff=lfs merge=lfs -text
