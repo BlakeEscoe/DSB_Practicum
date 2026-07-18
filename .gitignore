@@ -75,3 +75,7 @@ Thumbs.db
  
 # Generated data
 Capstone/data/
+Capstone/contracts.csv
+Capstone/player_stats.csv
+Capstone/schedules.csv
+Capstone/team_stats.csv
