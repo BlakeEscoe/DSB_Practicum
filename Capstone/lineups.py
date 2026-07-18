@@ -235,4 +235,4 @@ def optimize_starting_lineups(league_id, scoring_parameters):
 rosters = get_league_rosters('1319148515363921920')
 rosters.to_csv('rosters.csv')
 print(get_league_starting_positions('1319148515363921920'))
-optimize_starting_lineups('1319148515363921920').to_csv('optimized_starting_lineups.csv')
+optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg").to_csv('optimized_starting_lineups.csv')

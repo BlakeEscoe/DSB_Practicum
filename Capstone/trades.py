@@ -486,10 +486,13 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 ["fantasy_team", "player_name", "position", "starting", "ppr_ppg"]
             ]
 
+            trade_id = 0
 
             for _, player in other_team_b_players.iterrows():
                 position_2 = player["position"]
+                target_value_2 = player["ppr_ppg"]
                 trade_target_packages = []
+                trade_id += 1
 
                 package = pd.concat(
                     [
@@ -504,13 +507,15 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                     "players": ", ".join(package["player_name"]),
                     "position": ", ".join(package["position"]),
                     "starting": ", ".join(package["starting"].astype(str)),
-                    "ppr_ppg": package["ppr_ppg"].sum()
+                    "ppr_ppg": package["ppr_ppg"].sum(),
+                    "trade_id": trade_id
                 })
 
                 team_b_sent_value = player["ppr_ppg"] + trade_target["ppr_ppg"].iloc[0]
 
-                team_a_eligible_players = trade_candidates[(trade_candidates["position"] == position_2) & (~(trade_candidates["starting"]) |
-                                                            (trade_candidates["ppr_ppg"] + target_value >= team_b_sent_value))]
+                team_a_eligible_players = trade_candidates[(trade_candidates["position"] == position_2)
+                                                           & (trade_candidates["ppr_ppg"] > target_value_2)
+                                                           & (~(trade_candidates["starting"]) | (trade_candidates["ppr_ppg"] + target_value <= team_b_sent_value))]
 
                 team_a_packages = []
 
@@ -528,7 +533,8 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                         "players": ", ".join(package["player_name"]),
                         "position": ", ".join(package["position"]),
                         "starting": ", ".join(package["starting"].astype(str)),
-                        "ppr_ppg": package["ppr_ppg"].sum()
+                        "ppr_ppg": package["ppr_ppg"].sum(),
+                        "trade_id": trade_id
                     })
 
 
@@ -549,24 +555,25 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 trades.extend(
                     team_a_packages.merge(
                         trade_target_packages,
-                        how="cross",
+                        how="left",
+                        on="trade_id",
                         suffixes=("_team_a", "_team_b")
                     ).to_dict("records")
                 )
 
     trades = pd.DataFrame(trades)
-    trades = trades[trades["ppr_ppg_team_a"] >= trades["ppr_ppg_team_b"]]
+    #trades = trades[trades["ppr_ppg_team_a"] >= trades["ppr_ppg_team_b"]]
 
     return trades
 
 
-optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920')
+optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg")
 #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
 #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
 #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
 #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
 
-get_trades_to_improve_both_starting_lineups(league_id='1319148515363921920', team_id=4, optimized_lineups=optimized_lineups).to_csv('trades.csv')
+get_trades_to_improve_both_starting_lineups(league_id='1319148515363921920', team_id=4, optimized_lineups=optimized_lineups,scoring_parameters="actual_ppg").to_csv('trades.csv')
 
 """
 trades = find_mutually_beneficial_trades(
