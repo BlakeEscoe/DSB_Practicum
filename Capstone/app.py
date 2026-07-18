@@ -7,6 +7,7 @@ from typing import Any
 import altair as alt
 import polars as pl
 import streamlit as st
+import nflreadpy
 from streamlit_searchbox import st_searchbox
 
 def _flatten_html(markup: str) -> str:
