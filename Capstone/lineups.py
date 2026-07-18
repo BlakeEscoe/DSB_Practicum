@@ -206,7 +206,8 @@ def optimize_single_roster(team, starting_positions):
     )
 
 
-def optimize_starting_lineups(league_id):
+def optimize_starting_lineups(league_id, scoring_parameters):
+    # scoring_parameters can be "actual_ppg", "projections", "draft_value"
 
     rosters = get_league_rosters(league_id)
     starting_positions = get_league_starting_positions(league_id)

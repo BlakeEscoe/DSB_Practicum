@@ -343,7 +343,9 @@ def find_mutually_beneficial_trades(
         .reset_index(drop=True)
     )
 
-def get_best_trades_by_position(league_id, team_id, position, optimized_lineups):
+def get_best_trades_by_position(league_id, team_id, position, optimized_lineups, scoring_parameters):
+    #scoring_parameters can be "actual_ppg", "projections", "draft_value"
+
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
 
     current_lineups["weight"] = current_lineups["ppr_ppg"] * (
@@ -426,7 +428,9 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups)
 
     return trades
 
-def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_lineups):
+def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_lineups, scoring_parameters):
+    # scoring_parameters can be "actual_ppg", "projections", "draft_value"
+
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
 
     team_a_players = current_lineups[
@@ -506,7 +510,7 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 team_b_sent_value = player["ppr_ppg"] + trade_target["ppr_ppg"].iloc[0]
 
                 team_a_eligible_players = trade_candidates[(trade_candidates["position"] == position_2) & (~(trade_candidates["starting"]) |
-                                                            (trade_candidates["ppr_ppg"] + target_value < team_b_sent_value))]
+                                                            (trade_candidates["ppr_ppg"] + target_value >= team_b_sent_value))]
 
                 team_a_packages = []
 
@@ -531,11 +535,13 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 team_a_packages = pd.DataFrame(team_a_packages)
                 trade_target_packages = pd.DataFrame(trade_target_packages)
 
+                """
                 print("")
                 print(player_to_be_traded)
                 print(trade_target)
                 print(team_a_packages)
                 print(trade_target_packages)
+                """
 
                 if team_a_packages.empty or trade_target_packages.empty:
                     continue
@@ -548,7 +554,10 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                     ).to_dict("records")
                 )
 
-    return pd.DataFrame(trades)
+    trades = pd.DataFrame(trades)
+    trades = trades[trades["ppr_ppg_team_a"] >= trades["ppr_ppg_team_b"]]
+
+    return trades
 
 
 optimized_lineups = lineups.optimize_starting_lineups('1319148515363921920')
