@@ -367,6 +367,44 @@ def run_player_position_model(
         kind="mergesort",
     ).copy()
 
+    # Ensure each player has only one row per season and week.
+    rows_before_deduplication = len(dataframe)
+
+    dataframe = dataframe.drop_duplicates(
+        subset=[
+            "player_id",
+            "season",
+            "week",
+        ],
+        keep="first",
+    ).copy()
+
+    rows_removed = rows_before_deduplication - len(dataframe)
+
+    remaining_duplicates = dataframe.duplicated(
+        subset=[
+            "player_id",
+            "season",
+            "week",
+        ],
+        keep=False,
+    ).sum()
+
+    print(
+        f"Removed duplicate {position_value} player-week rows: "
+        f"{rows_removed:,}"
+    )
+
+    print(
+        f"Remaining duplicate {position_value} player-week rows: "
+        f"{remaining_duplicates:,}"
+    )
+
+    if remaining_duplicates != 0:
+        raise ValueError(
+            f"{position_value} player-week duplicates were not fully removed."
+        )
+
     derived_builder: (
         Callable[
             [pd.DataFrame],
@@ -879,19 +917,38 @@ def run_player_position_model(
     print(f"RMSE: {test_metrics['rmse']:.3f}")
     print(f"R²:   {test_metrics['r2']:.3f}")
 
-    prediction_columns = [
-        column for column in identifier_columns if column in test_df.columns
-    ]
+    if "player_display_name" in test_df.columns:
+        name_column = "player_display_name"
+    elif "player_name" in test_df.columns:
+        name_column = "player_name"
+    else:
+        raise KeyError(
+            "The dataset must contain player_display_name or player_name."
+        )
 
-    predictions_df = test_df[prediction_columns + [target]].copy()
-
-    predictions_df["predicted_fantasy_points"] = test_predictions
-
-    predictions_df["prediction_error"] = (
-        predictions_df[target] - predictions_df["predicted_fantasy_points"]
+    predictions_df = pd.DataFrame(
+        {
+            "player_name": test_df[name_column].values,
+            "season": test_df["season"].values,
+            "week": test_df["week"].values,
+            "predicted_fantasy_points": test_predictions,
+            "position": position_value,
+        }
     )
 
-    predictions_df["absolute_error"] = predictions_df["prediction_error"].abs()
+    predictions_df["predicted_fantasy_points"] = (
+        predictions_df["predicted_fantasy_points"].round(2)
+    )
+
+    predictions_df = predictions_df[
+        [
+            "player_name",
+            "season",
+            "week",
+            "predicted_fantasy_points",
+            "position",
+        ]
+    ]
 
     safe_to_csv(
         predictions_df,
