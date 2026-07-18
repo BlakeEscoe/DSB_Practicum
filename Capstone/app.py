@@ -35,6 +35,8 @@ from optimizers.draft_optimizer import rank_players
 import pandas as pd
 from pathlib import Path
 
+NFLREADPY_IMPORT_ERROR = None
+
 try:
     from nflreadpy.ui import (
         SearchConfig,
@@ -56,8 +58,7 @@ try:
     sys.modules.setdefault("nflreadpy.old_nfl_files.utils_date", _nflreadpy_utils_date)
     from nflreadpy.old_nfl_files.load_snap_counts import load_snap_counts
 except Exception as exc:
-    st.error(f"Unable to import nflreadpy UI helpers: {exc}")
-    st.stop()
+    NFLREADPY_IMPORT_ERROR = exc
 
 st.set_page_config(page_title="Fantasy Pathfinder", layout="wide")
 
@@ -1572,6 +1573,13 @@ def _build_split_params(split_key: str, split_value: str) -> dict[str, list[str]
 
 
 def run_stat_search():
+    if NFLREADPY_IMPORT_ERROR is not None:
+        st.warning(
+            "Stat Search is unavailable in this deployment because the old "
+            f"nflreadpy UI helpers are not installed: {NFLREADPY_IMPORT_ERROR}"
+        )
+        return
+
     # Seasons and the search box live outside the form: widgets inside an
     # st.form only rerun the script on submit. st.text_input also only
     # commits on blur/Enter, not per keystroke, so it can't drive live
