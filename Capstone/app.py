@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import polars as pl
 import streamlit as st
 from streamlit_searchbox import st_searchbox
@@ -629,6 +630,28 @@ def render_splits_table(splits: dict[str, Any]) -> str:
     """)
 
 
+def render_splits_chart(splits: dict[str, Any]) -> None:
+    """Bar chart of FPTS/game across one selected split section (e.g. Home
+    vs Away, or by weather bucket). A section with only one row (nothing to
+    compare) is skipped from the picker entirely.
+    """
+    sections = [s for s in splits.get("sections", []) if len(s.get("rows", [])) > 1]
+    if not sections:
+        return
+
+    section_labels = [s["label"] for s in sections]
+    selected_label = st.selectbox("Chart split", section_labels, key="splits_chart_section")
+    section = next(s for s in sections if s["label"] == selected_label)
+
+    chart_df = pd.DataFrame(
+        {
+            "Split": [row["label"] for row in section["rows"]],
+            "FPTS / Game": [row.get("fpts_per_game", 0) or 0 for row in section["rows"]],
+        }
+    ).set_index("Split")
+    st.bar_chart(chart_df)
+
+
 def _enrich_with_schedule_details(df: pl.DataFrame, seasons: tuple[int, ...]) -> pl.DataFrame:
     """Attach schedule fields the shared loader doesn't join (surface, temp,
     weekday, scores, conference/division) so the splits table has real data
@@ -794,7 +817,7 @@ def render_comparison(comparison: dict[str, Any]) -> str:
 
     n = len(players)
 
-    header_cards = []
+    header_cells = []
     for p in players:
         photo = (
             f'<img src="{html.escape(p["headshot"])}" alt="{html.escape(p["name"])}">'
@@ -802,14 +825,16 @@ def render_comparison(comparison: dict[str, Any]) -> str:
             else '<div class="compare-photo-placeholder"></div>'
         )
         team_position = " - ".join(x for x in (p.get("position"), p.get("team")) if x)
-        header_cards.append(
+        header_cells.append(
             f"""
-            <div class="compare-card">
-              {photo}
-              <div class="compare-name">{html.escape(p["name"])}</div>
-              <div class="compare-meta">{html.escape(team_position)}</div>
-              <div class="compare-meta">{p["games"]} games</div>
-            </div>
+            <td class="compare-header-cell">
+              <div class="compare-card">
+                {photo}
+                <div class="compare-name">{html.escape(p["name"])}</div>
+                <div class="compare-meta">{html.escape(team_position)}</div>
+                <div class="compare-meta">{p["games"]} games</div>
+              </div>
+            </td>
             """
         )
 
@@ -839,13 +864,18 @@ def render_comparison(comparison: dict[str, Any]) -> str:
             """
         )
 
+    label_col_pct = 16
+    player_col_pct = (100 - label_col_pct) / n
+    colgroup = (
+        f'<colgroup><col style="width:{label_col_pct}%">'
+        + "".join(f'<col style="width:{player_col_pct}%">' for _ in range(n))
+        + "</colgroup>"
+    )
+
     return _flatten_html(f"""
     <div class="compare-wrapper">
       <style>
         .compare-wrapper {{ margin: 0.5rem 0 1rem; }}
-        .compare-cards {{
-          display: grid; grid-template-columns: repeat({n}, 1fr); gap: 12px; margin-bottom: 12px;
-        }}
         .compare-card {{
           text-align: center; padding: 12px; border-radius: 10px; background: rgba(128,128,128,0.08);
         }}
@@ -855,19 +885,29 @@ def render_comparison(comparison: dict[str, Any]) -> str:
         }}
         .compare-name {{ font-weight: 700; font-size: 1rem; }}
         .compare-meta {{ font-size: 0.8rem; opacity: 0.75; }}
-        .compare-table {{ border-collapse: collapse; width: 100%; font-size: 0.85rem; }}
+        .compare-table {{
+          border-collapse: collapse; width: 100%; font-size: 0.85rem; table-layout: fixed;
+        }}
         .compare-table td {{
           padding: 6px 10px; border-bottom: 1px solid rgba(128,128,128,0.25); text-align: center;
+          overflow: hidden;
         }}
         .compare-table td.compare-label-col {{ text-align: left; font-weight: 600; }}
         .compare-table td.compare-best {{ font-weight: 700; background: rgba(45,212,191,0.18); }}
+        .compare-header-cell {{ padding: 12px 10px; border-bottom: none; vertical-align: top; }}
         .compare-section-row td {{
           text-align: left; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em;
           background: rgba(128,128,128,0.14); padding-top: 8px; padding-bottom: 8px; font-weight: 700;
         }}
       </style>
-      <div class="compare-cards">{''.join(header_cards)}</div>
       <table class="compare-table">
+        {colgroup}
+        <thead>
+          <tr class="compare-header-row">
+            <td class="compare-label-col"></td>
+            {''.join(header_cells)}
+          </tr>
+        </thead>
         <tbody>
           {fpts_rows}
           {''.join(group_sections)}
@@ -875,6 +915,48 @@ def render_comparison(comparison: dict[str, Any]) -> str:
       </table>
     </div>
     """)
+
+
+def render_comparison_chart(comparison: dict[str, Any]) -> None:
+    """Bar chart comparing one selected stat across all compared players.
+
+    A single stat at a time (rather than every stat at once) keeps the
+    y-axis meaningful - fantasy point totals and per-game averages, or a
+    completion percentage and a yardage total, live on wildly different
+    scales and would flatten each other out on a shared axis.
+    """
+    players = comparison.get("players", [])
+    groups = comparison.get("groups", [])
+    if len(players) < 2:
+        return
+
+    metric_options: list[tuple[str, str | None, str]] = [
+        ("Fantasy Points - Season Total", None, "fpts_total"),
+        ("Fantasy Points - Season Avg", None, "fpts_avg"),
+    ]
+    for group in groups:
+        group_label = STAT_GROUP_LABELS.get(group, group.upper())
+        for header in STAT_GROUP_HEADERS.get(group, []):
+            metric_options.append((f"{group_label} - {header}", group, header))
+
+    labels = [label for label, _, _ in metric_options]
+    selected_label = st.selectbox(
+        "Chart stat", labels, index=1, key="compare_chart_metric"
+    )
+    _, chart_group, chart_key = next(m for m in metric_options if m[0] == selected_label)
+
+    def metric_value(player: dict[str, Any]) -> float:
+        if chart_group is None:
+            return float(player.get(chart_key, 0) or 0)
+        return float(player.get("group_rows", {}).get(chart_group, {}).get(chart_key, 0) or 0)
+
+    chart_df = pd.DataFrame(
+        {
+            "Player": [p["name"] for p in players],
+            selected_label: [metric_value(p) for p in players],
+        }
+    ).set_index("Player")
+    st.bar_chart(chart_df)
 
 
 # --- End player comparison cards ---------------------------------------------
@@ -971,6 +1053,88 @@ def _sleeper_ppr_points(row: dict[str, Any]) -> float:
     fumbles_lost = n("rushing_fumbles_lost") + n("receiving_fumbles_lost") + n("sack_fumbles_lost")
     points += fumbles_lost * SLEEPER_PPR_SCORING["fum_lost"]
     return round(points, 2)
+
+
+def _sleeper_ppr_points_by_category(row: dict[str, Any]) -> dict[str, float]:
+    """Same weights as _sleeper_ppr_points, split by category instead of
+    summed - each term below appears in that function too, just grouped
+    differently, so the three categories plus fumbles always add back up to
+    the same total.
+    """
+
+    def n(col: str) -> float:
+        return float(row.get(col) or 0)
+
+    passing = (
+        n("passing_yards") * SLEEPER_PPR_SCORING["pass_yd"]
+        + n("passing_tds") * SLEEPER_PPR_SCORING["pass_td"]
+        + n("passing_interceptions") * SLEEPER_PPR_SCORING["pass_int"]
+        + n("passing_2pt_conversions") * SLEEPER_PPR_SCORING["pass_2pt"]
+    )
+    rushing = (
+        n("rushing_yards") * SLEEPER_PPR_SCORING["rush_yd"]
+        + n("rushing_tds") * SLEEPER_PPR_SCORING["rush_td"]
+        + n("rushing_2pt_conversions") * SLEEPER_PPR_SCORING["rush_2pt"]
+    )
+    receiving = (
+        n("receptions") * SLEEPER_PPR_SCORING["rec"]
+        + n("receiving_yards") * SLEEPER_PPR_SCORING["rec_yd"]
+        + n("receiving_tds") * SLEEPER_PPR_SCORING["rec_td"]
+        + n("receiving_2pt_conversions") * SLEEPER_PPR_SCORING["rec_2pt"]
+    )
+    fumbles_lost = n("rushing_fumbles_lost") + n("receiving_fumbles_lost") + n("sack_fumbles_lost")
+    fumbles = fumbles_lost * SLEEPER_PPR_SCORING["fum_lost"]
+    return {
+        "Passing": round(passing, 2),
+        "Rushing": round(rushing, 2),
+        "Receiving": round(receiving, 2),
+        "Fumbles": round(fumbles, 2),
+    }
+
+
+def compute_fpts_breakdown(df: pl.DataFrame, player_name: str) -> dict[str, float] | None:
+    """Season fantasy-point contribution by category, for the stat-share
+    donut chart. Returns None when fewer than 2 categories are positive -
+    a single-category player (e.g. a pure runner) has nothing to break down.
+    """
+    name_column = next(
+        (c for c in ("player_display_name", "player_name", "display_name", "name") if c in df.columns),
+        None,
+    )
+    if name_column is None:
+        return None
+
+    player_rows = df.filter(pl.col(name_column) == player_name)
+    if len(player_rows) == 0:
+        return None
+
+    cols = [
+        "passing_yards", "passing_tds", "passing_interceptions", "passing_2pt_conversions",
+        "rushing_yards", "rushing_tds", "rushing_2pt_conversions",
+        "receptions", "receiving_yards", "receiving_tds", "receiving_2pt_conversions",
+        "rushing_fumbles_lost", "receiving_fumbles_lost", "sack_fumbles_lost",
+    ]
+    available = [c for c in cols if c in player_rows.columns]
+    if not available:
+        return None
+
+    sums = player_rows.select([pl.sum(c).alias(c) for c in available]).to_dicts()[0]
+    breakdown = _sleeper_ppr_points_by_category(sums)
+    positive_categories = [k for k, v in breakdown.items() if k != "Fumbles" and v > 0]
+    if len(positive_categories) < 2:
+        return None
+    return breakdown
+
+
+def render_fpts_breakdown_chart(breakdown: dict[str, float]) -> None:
+    positive = {k: v for k, v in breakdown.items() if v > 0}
+    if len(positive) < 2:
+        return
+
+    chart_df = pd.DataFrame(
+        {"Category": list(positive.keys()), "Fantasy Points": list(positive.values())}
+    ).set_index("Category")
+    st.bar_chart(chart_df)
 
 
 def _game_log_group_values(row: dict[str, Any], group: str) -> dict[str, Any]:
@@ -1205,6 +1369,79 @@ def render_game_log_table(game_log: dict[str, Any]) -> str:
     """)
 
 
+def _game_log_chronological(game_log: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]]]:
+    """Week labels and rows in chronological (oldest-first) order.
+
+    Rows are stored most-recent-first for the table; a trend chart reads
+    left-to-right as time passing, so this flips them back.
+    """
+    rows = game_log.get("rows", [])
+    multi_season = game_log.get("multi_season", False)
+    chronological = list(reversed(rows))
+    week_labels = [
+        f"{row.get('season')} Wk{row.get('week')}" if multi_season else f"Wk{row.get('week')}"
+        for row in chronological
+    ]
+    return week_labels, chronological
+
+
+def render_game_log_chart(game_log: dict[str, Any]) -> None:
+    """Weekly fantasy points as bars, with a 3-game rolling average line
+    layered on top so a hot/cold streak is visible at a glance rather than
+    having to eyeball noisy week-to-week bars.
+    """
+    week_labels, chronological = _game_log_chronological(game_log)
+    if not chronological:
+        return
+
+    chart_df = pd.DataFrame(
+        {
+            "Week": week_labels,
+            "Fantasy Points": [row.get("fpts", 0) or 0 for row in chronological],
+        }
+    )
+    chart_df["Rolling Avg (3-game)"] = (
+        chart_df["Fantasy Points"].rolling(window=3, min_periods=1).mean().round(2)
+    )
+
+    bar = (
+        alt.Chart(chart_df)
+        .mark_bar(color="#2dd4bf")
+        .encode(
+            x=alt.X("Week", sort=None, title=None),
+            y=alt.Y("Fantasy Points", title="Fantasy Points"),
+            tooltip=["Week", "Fantasy Points"],
+        )
+    )
+    line = (
+        alt.Chart(chart_df)
+        .mark_line(color="#f97316", point=True)
+        .encode(
+            x=alt.X("Week", sort=None),
+            y=alt.Y("Rolling Avg (3-game)"),
+            tooltip=["Week", "Rolling Avg (3-game)"],
+        )
+    )
+    st.altair_chart((bar + line).properties(height=300), width="stretch")
+
+
+def render_snap_pct_chart(game_log: dict[str, Any]) -> None:
+    """Line chart of snap % usage by week, where available."""
+    week_labels, chronological = _game_log_chronological(game_log)
+    entries = [
+        (week, row.get("snap_pct"))
+        for week, row in zip(week_labels, chronological)
+        if row.get("snap_pct") is not None
+    ]
+    if len(entries) < 2:
+        return
+
+    chart_df = pd.DataFrame(
+        {"Week": [w for w, _ in entries], "Snap %": [v for _, v in entries]}
+    ).set_index("Week")
+    st.line_chart(chart_df)
+
+
 # --- End Sleeper standard PPR scoring + per-game log -------------------------
 
 
@@ -1216,12 +1453,7 @@ def load_stats(seasons_text: str):
 
 
 def _make_search_players(seasons_state_key: str):
-    """Build a st_searchbox callback bound to one tab's own seasons picker.
-
-    Each tab (Stat Search / Compare Players) has its own seasons multiselect,
-    so the live-suggest callback needs to read the matching session_state key
-    rather than a single shared one.
-    """
+    """Build a st_searchbox callback bound to the seasons picker's session_state key."""
 
     def _search_players(searchterm: str) -> list[str]:
         if not searchterm or len(searchterm.strip()) < 1:
@@ -1267,6 +1499,7 @@ def render_result(answer: dict[str, any]) -> None:
         table_html = render_comparison(comparison)
         if table_html:
             st.markdown(table_html, unsafe_allow_html=True)
+            render_comparison_chart(comparison)
 
     rows = answer.get("rows", [])
     # For a matched player, the game log below already covers this data
@@ -1282,6 +1515,13 @@ def render_result(answer: dict[str, any]) -> None:
         table_html = render_game_log_table(game_log)
         if table_html:
             st.markdown(table_html, unsafe_allow_html=True)
+            render_game_log_chart(game_log)
+            render_snap_pct_chart(game_log)
+
+    breakdown = answer.get("fpts_breakdown")
+    if breakdown:
+        st.write("#### Fantasy points by category")
+        render_fpts_breakdown_chart(breakdown)
 
     splits = answer.get("splits")
     if splits and splits.get("sections"):
@@ -1289,16 +1529,16 @@ def render_result(answer: dict[str, any]) -> None:
         table_html = render_splits_table(splits)
         if table_html:
             st.markdown(table_html, unsafe_allow_html=True)
+            render_splits_chart(splits)
 
 
 def _seasons_multiselect(key: str, state_key: str) -> str:
-    default_seasons = list(parse_seasons(None))
-    current_season = default_seasons[-1]
+    current_season = max(parse_seasons(None))
     season_options = list(range(current_season, 1998, -1))
     selected_seasons = st.multiselect(
         "Seasons",
         options=season_options,
-        default=default_seasons,
+        default=[],
         key=key,
         help="Select one or more seasons",
     )
@@ -1340,111 +1580,117 @@ def run_stat_search():
     # this: it calls the search callback on every keystroke (debounced) and
     # renders a live dropdown, with no need to press Enter or tab away.
     seasons = _seasons_multiselect("stat_seasons_multiselect", "stat_seasons_input")
+    search_players = _make_search_players("stat_seasons_input")
+
     query = st_searchbox(
-        _make_search_players("stat_seasons_input"),
+        search_players,
         key="player_searchbox",
         placeholder="Player Search",
         default_use_searchterm=True,
         clear_on_submit=False,
     ) or ""
 
+    compare_mode = st.toggle(
+        "Compare players",
+        key="compare_mode_toggle",
+        help="Add up to 2 more players to compare against your search above.",
+    )
+
+    # The main search box doubles as Player 1 in compare mode, so only 2 more
+    # slots are needed to match the previous 3-player compare tab.
+    compare_names = (query,) if query else ()
+    if compare_mode:
+        st.caption("Add at least one more player to compare.")
+        compare_cols = st.columns(2)
+        for i, col in enumerate(compare_cols):
+            with col:
+                selection = st_searchbox(
+                    search_players,
+                    key=f"compare_searchbox_{i}",
+                    placeholder=f"Player {i + 2}",
+                    default_use_searchterm=True,
+                    clear_on_submit=False,
+                ) or ""
+                if selection:
+                    compare_names += (selection,)
+
     with st.form("stat_search_form"):
         split_label, split_key, split_value = _split_selectbox("stat_split_select")
-        submitted = st.form_submit_button("Search")
+        submitted = st.form_submit_button("Compare" if compare_mode else "Search")
 
+    # The chart pickers rendered inside render_result (Chart split, Chart
+    # stat) are plain widgets outside this form, so touching them triggers
+    # their own rerun - on which st.form_submit_button() reports False again
+    # (it's only ever True on the exact rerun of the click). Gating the
+    # render itself on `submitted` made the whole results section vanish the
+    # moment a chart dropdown was touched. Computing the answer is still
+    # gated on submit (it's the expensive part), but the render pulls from a
+    # cached copy in session_state so it survives later, unrelated reruns.
     if submitted:
-        if not query:
+        if compare_mode:
+            if len(compare_names) < 2:
+                st.warning(
+                    "Enter at least 2 players (the player search box above counts "
+                    "as Player 1) to see a comparison."
+                )
+            else:
+                try:
+                    df = load_stats(seasons)
+                except Exception as exc:
+                    st.error(f"Failed to load stats: {exc}")
+                    df = None
+
+                if df is not None:
+                    filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
+                    answer = answer_query(
+                        filtered_df,
+                        SearchConfig(query="", seasons=parse_seasons(seasons), limit=12, compare=compare_names),
+                    )
+
+                    if answer.get("type") != "compare":
+                        missing = f" under the '{split_label}' split" if split_key else ""
+                        st.warning(
+                            f"Couldn't build a comparison for {', '.join(compare_names)}{missing} "
+                            "- one or more of them may have no games in the selected seasons."
+                        )
+                    else:
+                        comparison = compute_comparison(filtered_df, compare_names)
+                        if comparison:
+                            answer["comparison"] = comparison
+                        st.session_state["stat_search_answer"] = answer
+
+        elif not query:
             st.warning("Enter a query.")
-            return
+        else:
+            try:
+                df = load_stats(seasons)
+            except Exception as exc:
+                st.error(f"Failed to load stats: {exc}")
+                df = None
 
-        try:
-            df = load_stats(seasons)
-        except Exception as exc:
-            st.error(f"Failed to load stats: {exc}")
-            return
+            if df is not None:
+                filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
+                answer = answer_query(
+                    filtered_df,
+                    SearchConfig(query=query, seasons=parse_seasons(seasons), limit=12),
+                )
 
-        filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
-        answer = answer_query(
-            filtered_df,
-            SearchConfig(query=query, seasons=parse_seasons(seasons), limit=12),
-        )
+                if answer.get("type") == "player":
+                    parsed_seasons = parse_seasons(seasons)
+                    splits = compute_player_splits(df, answer["title"])
+                    if splits:
+                        answer["splits"] = splits
+                    game_log = compute_game_log(df, answer["title"], parsed_seasons)
+                    if game_log:
+                        answer["game_log"] = game_log
+                    breakdown = compute_fpts_breakdown(df, answer["title"])
+                    if breakdown:
+                        answer["fpts_breakdown"] = breakdown
 
-        if answer.get("type") == "player":
-            parsed_seasons = parse_seasons(seasons)
-            splits = compute_player_splits(df, answer["title"])
-            if splits:
-                answer["splits"] = splits
-            game_log = compute_game_log(df, answer["title"], parsed_seasons)
-            if game_log:
-                answer["game_log"] = game_log
+                st.session_state["stat_search_answer"] = answer
 
-        render_result(answer)
-
-
-def run_compare():
-    seasons = _seasons_multiselect("compare_seasons_multiselect", "compare_seasons_input")
-
-    st.write("Compare players")
-    st.caption("Select at least 2 players below.")
-    compare_cols = st.columns(3)
-    compare_selections: list[str] = []
-    search_players = _make_search_players("compare_seasons_input")
-    for i, col in enumerate(compare_cols):
-        with col:
-            selection = st_searchbox(
-                search_players,
-                key=f"compare_searchbox_{i}",
-                placeholder=f"Player {i + 1}",
-                default_use_searchterm=True,
-                clear_on_submit=False,
-            ) or ""
-            compare_selections.append(selection)
-    # Autocomplete (same live-suggest widget as the main search) guarantees
-    # every compare slot is a name that actually exists in the data, instead
-    # of a free-typed name with a typo silently dropping out of the compare.
-    compare_names = tuple(name for name in compare_selections if name)
-
-    with st.form("compare_form"):
-        split_label, split_key, split_value = _split_selectbox("compare_split_select")
-        submitted = st.form_submit_button("Compare")
-
-    if submitted:
-        if not compare_names:
-            st.warning("Select at least 2 players to compare.")
-            return
-
-        if len(compare_names) < 2:
-            st.warning(
-                "Only one compare box has a selection. Pick a player from the "
-                "dropdown in at least 2 of the 3 compare boxes to see a comparison."
-            )
-            return
-
-        try:
-            df = load_stats(seasons)
-        except Exception as exc:
-            st.error(f"Failed to load stats: {exc}")
-            return
-
-        filtered_df = _apply_split_filters(df, _build_split_params(split_key, split_value))
-        answer = answer_query(
-            filtered_df,
-            SearchConfig(query="", seasons=parse_seasons(seasons), limit=12, compare=compare_names),
-        )
-
-        if answer.get("type") != "compare":
-            missing = f" under the '{split_label}' split" if split_key else ""
-            st.warning(
-                f"Couldn't build a comparison for {', '.join(compare_names)}{missing} "
-                "- one or more of them may have no games in the selected seasons."
-            )
-            return
-
-        comparison = compute_comparison(filtered_df, compare_names)
-        if comparison:
-            answer["comparison"] = comparison
-
-        render_result(answer)
+    if "stat_search_answer" in st.session_state:
+        render_result(st.session_state["stat_search_answer"])
 
 
 def run_sleeper():
@@ -1569,15 +1815,13 @@ def run_draft_optimizer():
 # selector sidesteps that by only ever calling the active section's function.
 selected_section = st.radio(
     "Section",
-    ["Stat Search", "Compare Players", "Sleeper", "Draft Optimizer"],
+    ["Stat Search", "Sleeper", "Draft Optimizer"],
     horizontal=True,
     label_visibility="collapsed",
 )
 
 if selected_section == "Stat Search":
     run_stat_search()
-elif selected_section == "Compare Players":
-    run_compare()
 elif selected_section == "Sleeper":
     run_sleeper()
 else:
