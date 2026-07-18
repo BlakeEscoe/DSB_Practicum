@@ -1946,9 +1946,13 @@ def run_draft_optimizer():
 # clipped once the page grows tall (e.g. a Sleeper account with several
 # leagues) - the hidden panels bleed through below the active one. A manual
 # selector sidesteps that by only ever calling the active section's function.
+available_sections = ["Sleeper"]
+if NFLREADPY_IMPORT_ERROR is None:
+    available_sections.insert(0, "Stat Search")
+
 selected_section = st.radio(
     "Section",
-    ["Stat Search", "Sleeper"],
+    available_sections,
     horizontal=True,
     label_visibility="collapsed",
 )
