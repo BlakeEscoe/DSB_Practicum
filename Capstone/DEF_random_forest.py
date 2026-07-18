@@ -693,6 +693,88 @@ def_df = def_df.sort_values(
     kind="mergesort",
 ).copy()
 
+# ============================================================
+# REMOVE DUPLICATE TEAM-WEEK DEFENSE ROWS
+# ============================================================
+
+rows_before_deduplication = len(def_df)
+
+duplicate_defense_rows = def_df.duplicated(
+    subset=[
+        "team_player_stats",
+        "season",
+        "week",
+    ],
+    keep=False,
+)
+
+print(
+    "\nDuplicate defense team-week rows before removal:",
+    duplicate_defense_rows.sum(),
+)
+
+if duplicate_defense_rows.any():
+    duplicate_examples = (
+        def_df.loc[
+            duplicate_defense_rows,
+            [
+                "def_game_id",
+                "season",
+                "week",
+                "team_player_stats",
+                "opponent_team",
+                TARGET,
+            ],
+        ]
+        .sort_values(
+            [
+                "team_player_stats",
+                "season",
+                "week",
+                "def_game_id",
+            ]
+        )
+        .head(30)
+    )
+
+    print("\nExample duplicate defense rows:")
+    print(duplicate_examples.to_string(index=False))
+
+def_df = def_df.drop_duplicates(
+    subset=[
+        "team_player_stats",
+        "season",
+        "week",
+    ],
+    keep="first",
+).copy()
+
+rows_removed = rows_before_deduplication - len(def_df)
+
+remaining_duplicates = def_df.duplicated(
+    subset=[
+        "team_player_stats",
+        "season",
+        "week",
+    ],
+    keep=False,
+).sum()
+
+print(
+    f"\nRemoved duplicate defense team-week rows: "
+    f"{rows_removed:,}"
+)
+
+print(
+    f"Remaining duplicate defense team-week rows: "
+    f"{remaining_duplicates:,}"
+)
+
+if remaining_duplicates != 0:
+    raise ValueError(
+        "Defense team-week duplicates were not fully removed."
+    )
+
 
 # ============================================================
 # HISTORICAL FEATURES
@@ -1170,24 +1252,29 @@ print(f"R²:   {test_metrics['r2']:.3f}")
 # SAVE OUTPUTS
 # ============================================================
 
-predictions_df = test_df[
-    [
-        "def_game_id",
-        "season",
-        "week",
-        "team_player_stats",
-        "opponent_team",
-        TARGET,
-    ]
-].copy()
-
-predictions_df["predicted_fantasy_points"] = test_predictions
-
-predictions_df["prediction_error"] = (
-    predictions_df[TARGET] - predictions_df["predicted_fantasy_points"]
+predictions_df = pd.DataFrame(
+    {
+        "player_name": test_df["team_player_stats"].values,
+        "season": test_df["season"].values,
+        "week": test_df["week"].values,
+        "predicted_fantasy_points": test_predictions,
+        "position": "DEF",
+    }
 )
 
-predictions_df["absolute_error"] = predictions_df["prediction_error"].abs()
+predictions_df["predicted_fantasy_points"] = (
+    predictions_df["predicted_fantasy_points"].round(2)
+)
+
+predictions_df = predictions_df[
+    [
+        "player_name",
+        "season",
+        "week",
+        "predicted_fantasy_points",
+        "position",
+    ]
+]
 
 safe_to_csv(
     predictions_df,

@@ -271,6 +271,24 @@ require_columns(
 
 qb_df = main_df.loc[main_df["position_player_stats"].eq("QB")].copy()
 
+print("\nQB rows by season before target filtering:")
+print(qb_df["season"].value_counts(dropna=False).sort_index())
+
+print("\nNon-null fantasy_points by season:")
+print(
+    qb_df.groupby("season")["fantasy_points"]
+    .count()
+    .sort_index()
+)
+
+if "fantasy_points_ppr" in qb_df.columns:
+    print("\nNon-null fantasy_points_ppr by season:")
+    print(
+        qb_df.groupby("season")["fantasy_points_ppr"]
+        .count()
+        .sort_index()
+    )
+
 qb_df = qb_df.dropna(
     subset=[
         "player_id",
@@ -284,6 +302,29 @@ qb_df["player_id"] = qb_df["player_id"].astype(str).str.strip()
 
 print(f"QB rows: {len(qb_df):,}")
 
+# ============================================================
+# REMOVE DUPLICATE PLAYER-WEEK ROWS
+# ============================================================
+
+rows_before = len(qb_df)
+
+qb_df = qb_df.drop_duplicates(
+    subset=["player_id", "season", "week"],
+    keep="first",
+).copy()
+
+rows_removed = rows_before - len(qb_df)
+
+remaining_duplicates = qb_df.duplicated(
+    subset=["player_id", "season", "week"],
+    keep=False,
+).sum()
+
+print(f"Removed duplicate QB player-week rows: {rows_removed}")
+print(f"Remaining duplicate QB player-week rows: {remaining_duplicates}")
+
+if remaining_duplicates != 0:
+    raise ValueError("QB duplicates were not fully removed.")
 
 # ============================================================
 # CREATE OPTIONAL COLUMNS IF THEY ARE NOT AVAILABLE
@@ -1074,46 +1115,41 @@ print(f"R²:   {test_metrics['r2']:.3f}")
 
 
 # ============================================================
-# SAVE TEST PREDICTIONS
+# SAVE TEST PREDICTIONS FOR OPTIMIZER
 # ============================================================
 
-prediction_columns = [
-    column
-    for column in [
-        "player_id",
-        "player_display_name",
+if "player_display_name" in test_df.columns:
+    name_column = "player_display_name"
+elif "player_name" in test_df.columns:
+    name_column = "player_name"
+else:
+    raise KeyError(
+        "The dataset must contain player_display_name or player_name."
+    )
+
+predictions_df = pd.DataFrame(
+    {
+        "player_name": test_df[name_column].values,
+        "season": test_df["season"].values,
+        "week": test_df["week"].values,
+        "predicted_fantasy_points": test_predictions,
+        "position": "QB",
+    }
+)
+
+predictions_df["predicted_fantasy_points"] = (
+    predictions_df["predicted_fantasy_points"].round(2)
+)
+
+predictions_df = predictions_df[
+    [
         "player_name",
         "season",
         "week",
-        "team_player_stats",
-        "opponent_team",
-        TARGET,
+        "predicted_fantasy_points",
+        "position",
     ]
-    if column in test_df.columns
 ]
-
-predictions_df = test_df[prediction_columns].copy()
-
-predictions_df["predicted_fantasy_points"] = test_predictions
-
-predictions_df["prediction_error"] = (
-    predictions_df[TARGET] - predictions_df["predicted_fantasy_points"]
-)
-
-predictions_df["absolute_error"] = predictions_df["prediction_error"].abs()
-
-predictions_df = predictions_df.sort_values(
-    [
-        "season",
-        "week",
-        "absolute_error",
-    ],
-    ascending=[
-        True,
-        True,
-        False,
-    ],
-)
 
 safe_to_csv(
     predictions_df,
