@@ -28,7 +28,7 @@ from sleeper_connect import (
     get_user_name,
     nfl_player_ids,
 )
-from optimizers.draft_optimizer import rank_players
+from optimizers.draft_optimizer import load_player_predictions, rank_players
 import pandas as pd
 from pathlib import Path
 
@@ -1887,16 +1887,21 @@ def run_trade_finder():
 
 def run_draft_optimizer():
     st.subheader("Draft Optimizer")
-    st.caption(
-        "Sample projections are being used until the full model output is connected."
-    )
 
-    predictions_path = Path(__file__).resolve().parent / "data" / "sample_player_predictions.csv"
-    if not predictions_path.exists():
-        st.warning("Sample player projections are not available yet.")
+    try:
+        players, using_sample_fallback, prediction_source = load_player_predictions()
+    except Exception as exc:
+        st.warning(f"Draft optimizer projections could not be loaded: {exc}")
         return
 
-    players = pd.read_csv(predictions_path)
+    if using_sample_fallback:
+        st.warning(
+            "Using the sample Draft Optimizer data because model predictions "
+            f"could not be loaded from {prediction_source}."
+        )
+    else:
+        st.caption(f"Using model predictions from {prediction_source}.")
+
     drafted_players = st.multiselect(
         "Players Already Drafted",
         options=players["player"].tolist(),
@@ -1913,9 +1918,9 @@ def run_draft_optimizer():
         st.markdown(
             """
 - **Player:** The player's name.
-- **Position:** The player's fantasy position, such as QB, RB, WR, or TE.
+- **Position:** The player's fantasy position, such as QB, RB, WR, TE, K, or DEF.
 - **Team:** The player's current NFL team abbreviation.
-- **Predicted Points:** The player's estimated fantasy points from the sample projections.
+- **Predicted Points:** The player's estimated fantasy points from the model projections.
 - **Replacement Points:** The expected points from a readily available player at the same position.
 - **Value Over Replacement:** How many more points the player is projected to score than a replacement-level option. Higher is better.
 """
@@ -1931,8 +1936,20 @@ def run_draft_optimizer():
             "value_over_replacement": "Value Over Replacement",
         }
     )
+    display_players = display_players[
+        [
+            "Player",
+            "Position",
+            "Team",
+            "Predicted Points",
+            "Replacement Points",
+            "Value Over Replacement",
+        ]
+    ].copy()
+    display_players["Team"] = display_players["Team"].fillna("")
+
     st.dataframe(
-        pl.from_pandas(display_players),
+        display_players,
         hide_index=True,
         use_container_width=True,
     )
