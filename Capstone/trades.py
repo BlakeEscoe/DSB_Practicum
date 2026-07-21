@@ -352,7 +352,7 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
         optimized_lineups['score_value'] = optimized_lineups['ppr_ppg']
 
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
-    current_lineups = current_lineups[optimized_lineups["position"] != 'DEF']
+    current_lineups = current_lineups[current_lineups["position"] != 'DEF']
 
     current_lineups["weight"] = current_lineups["score_value"] * (
             1 + 2 * current_lineups["starting"].astype(int)
@@ -443,7 +443,7 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
         optimized_lineups['score_value'] = optimized_lineups['ppr_ppg']
 
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
-    current_lineups = current_lineups[optimized_lineups["position"] != 'DEF']
+    current_lineups = current_lineups[current_lineups["position"] != 'DEF']
 
     team_a_players = current_lineups[
         current_lineups["roster_id"] == team_id
