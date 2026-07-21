@@ -344,11 +344,17 @@ def find_mutually_beneficial_trades(
     )
 
 def get_best_trades_by_position(league_id, team_id, position, optimized_lineups, scoring_parameters):
-    #scoring_parameters can be "actual_ppg", "projections", "draft_value"
+    # scoring_parameters can be "past_stats", "projections"
+
+    if scoring_parameters == 'projections':
+        optimized_lineups['score_value'] = optimized_lineups['value_over_replacement']
+    else:
+        optimized_lineups['score_value'] = optimized_lineups['ppr_ppg']
 
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
+    current_lineups = current_lineups[optimized_lineups["position"] != 'DEF']
 
-    current_lineups["weight"] = current_lineups["ppr_ppg"] * (
+    current_lineups["weight"] = current_lineups["score_value"] * (
             1 + 2 * current_lineups["starting"].astype(int)
     )
 
@@ -359,22 +365,22 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
     target_value = team_a_players[
         (team_a_players["position"] == position) &
         (team_a_players["starting"])
-        ]["ppr_ppg"].min()
+        ]["score_value"].min()
 
     trade_candidates = team_a_players[
         (team_a_players["position"] != position) |
         (
                 (team_a_players["position"] == position) &
-                (team_a_players["ppr_ppg"] <= target_value)
+                (team_a_players["score_value"] <= target_value)
         )
         ]
 
     trade_targets = current_lineups[
         (current_lineups["roster_id"] != team_id) &
         (current_lineups["position"] == position) &
-        (current_lineups["ppr_ppg"] > target_value)
+        (current_lineups["score_value"] > target_value)
         ][
-        ["fantasy_team", "player_name", "position", "starting", "ppr_ppg", "weight"]
+        ["fantasy_team", "player_name", "position", "starting", "score_value", "weight"]
     ]
 
     team_a_packages = []
@@ -388,7 +394,7 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
             "players": ", ".join(package["player_name"]),
             "position": ", ".join(package["position"]),
             "starting": package["starting"].iloc[0],
-            "ppg": package["ppr_ppg"].sum(),
+            "score_value": package["score_value"].sum(),
             "weight": package["weight"].sum()
         })
 
@@ -401,7 +407,7 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
             "players": ", ".join(package["player_name"]),
             "position": ", ".join(package["position"]),
             "starting": ", ".join(package["starting"].astype(str)),
-            "ppg": package["ppr_ppg"].sum(),
+            "score_value": package["score_value"].sum(),
             "weight": package["weight"].sum()
         })
 
@@ -418,7 +424,7 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
     trades = (
         trades[
             (trades["weight_diff"] >= 0) &
-            (trades["ppg"]/trades["ppr_ppg"] <= 1.3)
+            (trades["score_value_team_a"]/trades["score_value_team_b"] <= 1.15)
             ]
         .sort_values(
             "weight_diff",
@@ -429,9 +435,15 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
     return trades
 
 def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_lineups, scoring_parameters):
-    # scoring_parameters can be "actual_ppg", "projections", "draft_value"
+    # scoring_parameters can be "past_stats", "projections"
+
+    if scoring_parameters == 'projections':
+        optimized_lineups['score_value'] = optimized_lineups['value_over_replacement']
+    else:
+        optimized_lineups['score_value'] = optimized_lineups['ppr_ppg']
 
     current_lineups = optimized_lineups[optimized_lineups["position"] != 'K']
+    current_lineups = current_lineups[optimized_lineups["position"] != 'DEF']
 
     team_a_players = current_lineups[
         current_lineups["roster_id"] == team_id
@@ -445,16 +457,16 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
         target_value = team_a_players[
             (team_a_players["position"] == position) &
             (team_a_players["starting"])
-            ]["ppr_ppg"].min()
+            ]["score_value"].min()
 
         player_to_be_traded = team_a_players[(team_a_players["position"] == position) &
-                    (team_a_players["ppr_ppg"] == target_value)]
+                    (team_a_players["score_value"] == target_value)]
 
         trade_candidates = team_a_players[
             (team_a_players["position"] != position) |
             (
                     (team_a_players["position"] == position) &
-                    (team_a_players["ppr_ppg"] < target_value)
+                    (team_a_players["score_value"] < target_value)
             )
             ]
 
@@ -466,11 +478,11 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 current_lineups[
                     (current_lineups["roster_id"] == team_b_id) &
                     (current_lineups["position"] == position) &
-                    (current_lineups["ppr_ppg"] > target_value)
+                    (current_lineups["score_value"] > target_value)
                     ][
-                    ["fantasy_team", "player_name", "position", "starting", "ppr_ppg"]
+                    ["fantasy_team", "player_name", "position", "starting", "score_value"]
                 ]
-                .nsmallest(1, "ppr_ppg")
+                .nsmallest(1, "score_value")
             )
 
             if trade_target.empty:
@@ -483,14 +495,14 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 (current_lineups["starting"]) &
                 (current_lineups["player_name"] != trade_target_name)
                 ][
-                ["fantasy_team", "player_name", "position", "starting", "ppr_ppg"]
+                ["fantasy_team", "player_name", "position", "starting", "score_value"]
             ]
 
             trade_id = 0
 
             for _, player in other_team_b_players.iterrows():
                 position_2 = player["position"]
-                target_value_2 = player["ppr_ppg"]
+                target_value_2 = player["score_value"]
                 trade_target_packages = []
                 trade_id += 1
 
@@ -507,15 +519,15 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                     "players": ", ".join(package["player_name"]),
                     "position": ", ".join(package["position"]),
                     "starting": ", ".join(package["starting"].astype(str)),
-                    "ppr_ppg": package["ppr_ppg"].sum(),
+                    "score_value": package["score_value"].sum(),
                     "trade_id": trade_id
                 })
 
-                team_b_sent_value = player["ppr_ppg"] + trade_target["ppr_ppg"].iloc[0]
+                team_b_sent_value = player["score_value"] + trade_target["score_value"].iloc[0]
 
                 team_a_eligible_players = trade_candidates[(trade_candidates["position"] == position_2)
-                                                           & (trade_candidates["ppr_ppg"] > target_value_2)
-                                                           & (~(trade_candidates["starting"]) | (trade_candidates["ppr_ppg"] + target_value <= team_b_sent_value))]
+                                                           & (trade_candidates["score_value"] > target_value_2)
+                                                           & (~(trade_candidates["starting"]) | (trade_candidates["score_value"] + target_value <= team_b_sent_value))]
 
                 team_a_packages = []
 
@@ -533,7 +545,7 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                         "players": ", ".join(package["player_name"]),
                         "position": ", ".join(package["position"]),
                         "starting": ", ".join(package["starting"].astype(str)),
-                        "ppr_ppg": package["ppr_ppg"].sum(),
+                        "score_value": package["score_value"].sum(),
                         "trade_id": trade_id
                     })
 
@@ -572,14 +584,13 @@ if __name__ == "__main__":
         '1319148515363921920',
         scoring_parameters="actual_ppg"
     )
-    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='QB', optimized_lineups=optimized_lineups).to_csv('QB_trades.csv')
-    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups).to_csv('RB_trades.csv')
-    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups).to_csv('WR_trades.csv')
-    #get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='TE', optimized_lineups=optimized_lineups).to_csv('TE_trades.csv')
+
+    get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='RB', optimized_lineups=optimized_lineups,scoring_parameters='past_stats').to_csv('RB_trades.csv')
+    get_best_trades_by_position(league_id='1319148515363921920', team_id=4, position='WR', optimized_lineups=optimized_lineups,scoring_parameters='projections').to_csv('WR_trades.csv')
 
     get_trades_to_improve_both_starting_lineups(
         league_id='1319148515363921920',
         team_id=4,
         optimized_lineups=optimized_lineups,
-        scoring_parameters="actual_ppg"
+        scoring_parameters="past_stats"
     ).to_csv('trades.csv')

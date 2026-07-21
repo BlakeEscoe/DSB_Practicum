@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import nflreadpy as nfl
 from collections import Counter
+import optimizers.draft_optimizer as draft
 
 def get_league_users(league_id):
     url = f"https://api.sleeper.app/v1/league/{league_id}/users"
@@ -28,7 +29,20 @@ def get_player_stats(season=2025):
     player_stats = nfl.load_player_stats(list(range(2000, 2026))).to_pandas()
     player_stats = player_stats[(player_stats['season'] == season) & (player_stats['season_type'] == 'REG')]
     player_stats['fantasy_ppr_points'] = player_stats['passing_tds']*4 + player_stats['passing_yards']*0.04 + player_stats['passing_interceptions']*-1 + player_stats['passing_2pt_conversions']*2 + player_stats['rushing_yards']*0.1 + player_stats['receiving_yards']*0.1 + player_stats['rushing_tds']*6 + player_stats['receiving_tds']*6 + player_stats['rushing_2pt_conversions']*2 + player_stats['receiving_2pt_conversions']*2 + player_stats['receptions']*1 + player_stats['fumbles_lost_total']*-1
-    return player_stats.groupby('player_display_name').agg(ppr_ppg=('fantasy_ppr_points', 'mean'))
+    player_stats = (player_stats.groupby(['player_display_name','position','team']).agg(ppr_ppg=('fantasy_ppr_points', 'mean')).reset_index())
+
+    draft_ranking_players = player_stats[["player_display_name","position","team","ppr_ppg"]]
+    draft_ranking_players.columns = ['player', 'position', 'team', 'predicted_points']
+    draft_ranking_players = draft.rank_players(draft_ranking_players)
+    draft_ranking_players.columns = ['player_display_name', 'position', 'team', 'predicted_points', 'replacement_points', 'value_over_replacement']
+
+    player_stats = player_stats.merge(draft_ranking_players,
+        how="left",
+        on=['player_display_name', 'position', 'team'],
+        suffixes=("_stats","_draft_projections")
+    )
+
+    return player_stats
 
 
 def get_league_starting_positions(league_id):
@@ -89,7 +103,12 @@ def get_league_rosters(league_id):
 
     league_rosters = pd.DataFrame(league_rosters)
 
-    return league_rosters.merge(stats, left_on=["player_name"], right_on=["player_display_name"], how="left")
+    return league_rosters.merge(
+        stats,
+        left_on=["player_name", "position"],
+        right_on=["player_display_name", "position"],
+        how="left"
+    )
 
 def optimize_single_roster(team, starting_positions):
     """
@@ -233,7 +252,13 @@ def optimize_starting_lineups(league_id, scoring_parameters):
 
 
 if __name__ == "__main__":
-    rosters = get_league_rosters('1319148515363921920')
-    rosters.to_csv('rosters.csv')
-    print(get_league_starting_positions('1319148515363921920'))
-    optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg").to_csv('optimized_starting_lineups.csv')
+    #rosters = get_league_rosters('1319148515363921920')
+    #rosters.to_csv('rosters.csv')
+    #print(get_league_starting_positions('1319148515363921920'))
+    #optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg").to_csv('optimized_starting_lineups.csv')
+
+    #rosters = get_league_rosters('1319148515363921920')
+    #rosters.to_csv('rosters.csv')
+    #optimize_starting_lineups('1319148515363921920',scoring_parameters="actual_ppg").to_csv('optimized_starting_lineups.csv')
+
+    get_player_stats(2025).to_csv('player_stats_trades.csv')
