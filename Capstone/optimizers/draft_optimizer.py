@@ -1,4 +1,74 @@
+import sys
+from pathlib import Path
+
 import pandas as pd
+
+
+CAPSTONE_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = CAPSTONE_DIR / "data"
+SAMPLE_PREDICTIONS_FILE = DATA_DIR / "sample_player_predictions.csv"
+COMBINED_MODEL_PREDICTIONS_FILE = DATA_DIR / "all_2025_predictions.csv"
+
+if str(CAPSTONE_DIR) not in sys.path:
+    sys.path.insert(0, str(CAPSTONE_DIR))
+
+
+def _prepare_predictions_for_optimizer(predictions):
+    # The model output is weekly. The draft optimizer needs one row per player,
+    # so we average the weekly predictions into one predicted_points value.
+    players = pd.DataFrame()
+    players["player"] = predictions["player_name"]
+    players["position"] = predictions["position"].astype(str).str.upper().str.strip()
+    players["predicted_points"] = pd.to_numeric(
+        predictions["predicted_fantasy_points"],
+        errors="coerce",
+    )
+
+    # The current combined prediction file does not include NFL team or Sleeper ID.
+    # Keep the columns available so the UI table shape stays consistent.
+    players["team"] = pd.NA
+    players["sleeper_id"] = pd.NA
+
+    defense_mask = players["position"] == "DEF"
+    players.loc[defense_mask, "team"] = players.loc[defense_mask, "player"]
+
+    return (
+        players.dropna(subset=["player", "position", "predicted_points"])
+        .groupby(["player", "sleeper_id", "position", "team"], dropna=False, as_index=False)
+        ["predicted_points"]
+        .mean()
+    )
+
+
+def load_player_predictions(season=2025):
+    # First try the function your teammates built.
+    try:
+        from prediction_func import load_predictions
+
+        predictions = load_predictions(season)
+        players = _prepare_predictions_for_optimizer(predictions)
+
+        return players, False, f"prediction_func.load_predictions({season})"
+    except Exception as model_error:
+        # If the six source files are not present but the already-combined model
+        # output exists, use that before falling back to the old sample data.
+        if COMBINED_MODEL_PREDICTIONS_FILE.exists():
+            predictions = pd.read_csv(COMBINED_MODEL_PREDICTIONS_FILE)
+            players = _prepare_predictions_for_optimizer(predictions)
+
+            return (
+                players,
+                False,
+                COMBINED_MODEL_PREDICTIONS_FILE.name,
+            )
+
+        sample_players = pd.read_csv(SAMPLE_PREDICTIONS_FILE)
+
+        return (
+            sample_players,
+            True,
+            f"sample fallback ({model_error})",
+        )
 
 
 def rank_players(players, drafted_players=None):
@@ -11,6 +81,8 @@ def rank_players(players, drafted_players=None):
         "RB": 10,
         "WR": 10,
         "TE": 7,
+        "K": 7,
+        "DEF": 6,
     }
 
     # Make a copy so we do not accidentally change the original DataFrame.
@@ -46,7 +118,11 @@ def rank_players(players, drafted_players=None):
 # This block only runs when we run this file directly.
 # It will not run if another file imports rank_players().
 if __name__ == "__main__":
-    players = pd.read_csv("Capstone/data/sample_player_predictions.csv")
+    players, using_sample_fallback, source = load_player_predictions()
+
+    print(f"Prediction source: {source}")
+    if using_sample_fallback:
+        print("Using sample fallback projections.")
 
     ranked_players = rank_players(players)
 
