@@ -4,6 +4,8 @@ from pathlib import Path
 import pandas as pd
 
 
+pd.set_option("future.infer_string", False)
+
 CAPSTONE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = CAPSTONE_DIR / "data"
 SAMPLE_PREDICTIONS_FILE = DATA_DIR / "sample_player_predictions.csv"
@@ -13,12 +15,41 @@ if str(CAPSTONE_DIR) not in sys.path:
     sys.path.insert(0, str(CAPSTONE_DIR))
 
 
+def _read_prediction_csv(csv_path):
+    # Some local Python/pandas builds can crash when Streamlit triggers
+    # Arrow-backed string columns. These dtypes keep the CSV read simple.
+    return pd.read_csv(
+        csv_path,
+        dtype={
+            "player_name": object,
+            "position": object,
+            "season": int,
+            "week": int,
+            "predicted_fantasy_points": float,
+        },
+    )
+
+
+def _normalize_player_name(player_name):
+    # Sleeper and model data can use slightly different punctuation.
+    # Normalizing lets "Amon-Ra St. Brown" match "Amon Ra St Brown".
+    return "".join(
+        character.lower()
+        for character in str(player_name)
+        if character.isalnum()
+    )
+
+
 def _prepare_predictions_for_optimizer(predictions):
     # The model output is weekly. The draft optimizer needs one row per player,
     # so we average the weekly predictions into one predicted_points value.
     players = pd.DataFrame()
-    players["player"] = predictions["player_name"]
-    players["position"] = predictions["position"].astype(str).str.upper().str.strip()
+    players["player"] = predictions["player_name"].astype(object)
+    players["position"] = (
+        predictions["position"]
+        .astype(object)
+        .map(lambda position: str(position).upper().strip())
+    )
     players["predicted_points"] = pd.to_numeric(
         predictions["predicted_fantasy_points"],
         errors="coerce",
@@ -53,7 +84,7 @@ def load_player_predictions(season=2025):
         # If the six source files are not present but the already-combined model
         # output exists, use that before falling back to the old sample data.
         if COMBINED_MODEL_PREDICTIONS_FILE.exists():
-            predictions = pd.read_csv(COMBINED_MODEL_PREDICTIONS_FILE)
+            predictions = _read_prediction_csv(COMBINED_MODEL_PREDICTIONS_FILE)
             players = _prepare_predictions_for_optimizer(predictions)
 
             return (
@@ -71,7 +102,7 @@ def load_player_predictions(season=2025):
         )
 
 
-def rank_players(players, drafted_players=None):
+def rank_players(players, drafted_players=None, drafted_sleeper_ids=None):
     # Functions let us reuse code instead of rewriting the same steps in multiple places.
     # This function can rank players from a CSV file, a web app, or a future test.
 
@@ -88,11 +119,29 @@ def rank_players(players, drafted_players=None):
     # Make a copy so we do not accidentally change the original DataFrame.
     ranked_players = players.copy()
 
-    # drafted_players is optional.
-    # If we receive a list of drafted player names, remove those players before ranking.
-    if drafted_players is not None:
+    # drafted_sleeper_ids is optional.
+    # If Sleeper IDs are available, they are the safest way to remove drafted players.
+    if drafted_sleeper_ids is not None and "sleeper_id" in ranked_players.columns:
+        drafted_sleeper_ids = {
+            str(sleeper_id)
+            for sleeper_id in drafted_sleeper_ids
+            if sleeper_id is not None
+        }
         ranked_players = ranked_players[
-            ~ranked_players["player"].isin(drafted_players)
+            ~ranked_players["sleeper_id"].astype(str).isin(drafted_sleeper_ids)
+        ]
+
+    # drafted_players is optional.
+    # If we receive player names, remove matching names before ranking.
+    # The normalized version handles small punctuation differences.
+    if drafted_players is not None:
+        drafted_player_names = {
+            _normalize_player_name(player)
+            for player in drafted_players
+            if player
+        }
+        ranked_players = ranked_players[
+            ~ranked_players["player"].map(_normalize_player_name).isin(drafted_player_names)
         ]
 
     # Add a replacement_points column by matching each player's position.
