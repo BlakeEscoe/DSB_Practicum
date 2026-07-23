@@ -1869,6 +1869,21 @@ def get_user_roster_id(league_id):
 
     return None
 
+
+def show_trade_table(trades):
+    display_trades = trades.copy()
+    text_columns = display_trades.select_dtypes(include=["object"]).columns
+
+    for column in text_columns:
+        display_trades[column] = display_trades[column].fillna("").astype(str)
+
+    st.dataframe(
+        display_trades,
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
 def run_trade_finder():
     league_id = get_selected_sleeper_league_id()
 
@@ -1910,11 +1925,7 @@ def run_trade_finder():
             if trades.empty:
                 st.info("No trades found.")
             else:
-                st.dataframe(
-                    pl.from_pandas(trades),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                show_trade_table(trades)
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")
@@ -1950,11 +1961,7 @@ def run_trade_finder():
             if trades.empty:
                 st.info("No trades found.")
             else:
-                st.dataframe(
-                    pl.from_pandas(trades),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                show_trade_table(trades)
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")

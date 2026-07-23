@@ -2,6 +2,15 @@ import lineups
 import pandas as pd
 from itertools import combinations
 
+
+def join_clean(values):
+    return ", ".join(
+        str(value)
+        for value in values
+        if pd.notna(value) and str(value).strip()
+    )
+
+
 def calculate_trade_impact(
     roster_before,
     roster_after,
@@ -303,12 +312,12 @@ def find_mutually_beneficial_trades(
                             team_b.iloc[0]["fantasy_team"],
 
                         "team_a_gives":
-                            ", ".join(
+                            join_clean(
                                 players_to_team_b["player_name"]
                             ),
 
                         "team_b_gives":
-                            ", ".join(
+                            join_clean(
                                 players_to_team_a["player_name"]
                             ),
 
@@ -391,8 +400,8 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
 
         team_a_packages.append({
             "fantasy_team": package["fantasy_team"].iloc[0],
-            "players": ", ".join(package["player_name"]),
-            "position": ", ".join(package["position"]),
+            "players": join_clean(package["player_name"]),
+            "position": join_clean(package["position"]),
             "starting": package["starting"].iloc[0],
             "score_value": package["score_value"].sum(),
             "weight": package["weight"].sum()
@@ -403,10 +412,10 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
         package = trade_candidates.loc[list(combo)]
 
         team_a_packages.append({
-            "fantasy_team": ", ".join(package["fantasy_team"].unique()),
-            "players": ", ".join(package["player_name"]),
-            "position": ", ".join(package["position"]),
-            "starting": ", ".join(package["starting"].astype(str)),
+            "fantasy_team": join_clean(package["fantasy_team"].unique()),
+            "players": join_clean(package["player_name"]),
+            "position": join_clean(package["position"]),
+            "starting": join_clean(package["starting"].astype(str)),
             "score_value": package["score_value"].sum(),
             "weight": package["weight"].sum()
         })
@@ -515,10 +524,10 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                 )
 
                 trade_target_packages.append({
-                    "fantasy team": ", ".join(package["fantasy_team"].unique()),
-                    "players": ", ".join(package["player_name"]),
-                    "position": ", ".join(package["position"]),
-                    "starting": ", ".join(package["starting"].astype(str)),
+                    "fantasy team": join_clean(package["fantasy_team"].unique()),
+                    "players": join_clean(package["player_name"]),
+                    "position": join_clean(package["position"]),
+                    "starting": join_clean(package["starting"].astype(str)),
                     "score_value": package["score_value"].sum(),
                     "trade_id": trade_id
                 })
@@ -541,10 +550,10 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
                     )
 
                     team_a_packages.append({
-                        "fantasy team": ", ".join(package["fantasy_team"].unique()),
-                        "players": ", ".join(package["player_name"]),
-                        "position": ", ".join(package["position"]),
-                        "starting": ", ".join(package["starting"].astype(str)),
+                        "fantasy team": join_clean(package["fantasy_team"].unique()),
+                        "players": join_clean(package["player_name"]),
+                        "position": join_clean(package["position"]),
+                        "starting": join_clean(package["starting"].astype(str)),
                         "score_value": package["score_value"].sum(),
                         "trade_id": trade_id
                     })
