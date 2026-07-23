@@ -6,6 +6,7 @@ from typing import Any
 
 import altair as alt
 import polars as pl
+import requests
 import streamlit as st
 import nflreadpy
 from streamlit_searchbox import st_searchbox
@@ -1782,17 +1783,6 @@ def run_sleeper():
                 run_trade_finder()
 
 
-"""
-@st.cache_data(ttl=300)
-def load_trade_recommendations(league_id, roster_id, min_gain):
-    from trades import find_mutually_beneficial_trades
-
-    return find_mutually_beneficial_trades(
-        league_id=league_id,
-        team_id=roster_id,
-        min_gain=min_gain,
-    )
-"""
 @st.cache_data(ttl=300)
 def load_optimized_lineups(league_id, scoring_parameters):
     import lineups
@@ -1879,66 +1869,21 @@ def get_user_roster_id(league_id):
 
     return None
 
-"""
-def run_trade_finder():
-    league_id = get_selected_sleeper_league_id()
 
-    if not league_id:
-        st.info("Select a Sleeper league first.")
-        return
+def show_trade_table(trades):
+    display_trades = trades.copy()
+    text_columns = display_trades.select_dtypes(include=["object"]).columns
 
-    roster_id = get_user_roster_id(league_id)
-
-    if roster_id is None:
-        st.warning("Could not find your roster in the selected league.")
-        return
-
-    st.write("Selected League ID:", league_id)
-    st.write("Your Roster ID:", roster_id)
-
-    min_gain = st.number_input(
-        "Minimum weekly gain for both teams",
-        min_value=0.0,
-        value=0.1,
-        step=0.1,
-    )
-
-    if not st.button("Find Trade Ideas", key="find_trade_ideas"):
-        return
-
-    try:
-        with st.spinner("Finding mutually beneficial trades..."):
-            trade_recommendations = load_trade_recommendations(
-                league_id,
-                roster_id,
-                min_gain,
-            )
-    except Exception as exc:
-        st.warning(f"Trade recommendations could not be loaded: {exc}")
-        return
-
-    if trade_recommendations.empty:
-        st.info("No mutually beneficial trades found with the current settings.")
-        return
-
-    display_trades = trade_recommendations.rename(
-        columns={
-            "team_a": "Your Team",
-            "team_b": "Trade Partner",
-            "team_a_gives": "You Give",
-            "team_b_gives": "You Receive",
-            "team_a_gain": "Your Weekly Gain",
-            "team_b_gain": "Partner Weekly Gain",
-            "combined_gain": "Combined Gain",
-        }
-    )
+    for column in text_columns:
+        display_trades[column] = display_trades[column].fillna("").astype(str)
 
     st.dataframe(
-        pl.from_pandas(display_trades),
+        display_trades,
         hide_index=True,
         use_container_width=True,
     )
-"""
+
+
 def run_trade_finder():
     league_id = get_selected_sleeper_league_id()
 
@@ -1980,11 +1925,7 @@ def run_trade_finder():
             if trades.empty:
                 st.info("No trades found.")
             else:
-                st.dataframe(
-                    pl.from_pandas(trades),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                show_trade_table(trades)
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")
@@ -2020,15 +1961,63 @@ def run_trade_finder():
             if trades.empty:
                 st.info("No trades found.")
             else:
-                st.dataframe(
-                    pl.from_pandas(trades),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                show_trade_table(trades)
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")
 
+
+
+@st.cache_data(ttl=60)
+def load_sleeper_league_drafts(league_id):
+    response = requests.get(
+        f"https://api.sleeper.app/v1/league/{league_id}/drafts",
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json() or []
+
+
+@st.cache_data(ttl=60)
+def load_sleeper_draft_picks(draft_id):
+    response = requests.get(
+        f"https://api.sleeper.app/v1/draft/{draft_id}/picks",
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json() or []
+
+
+def _draft_label(draft):
+    metadata = draft.get("metadata") or {}
+    draft_name = metadata.get("name") or draft.get("type", "Draft")
+    status = draft.get("status", "unknown")
+    draft_id = draft.get("draft_id", "")
+
+    return f"{draft_name} ({status}) - {draft_id}"
+
+
+def _drafted_players_from_picks(picks):
+    drafted_player_names = []
+    drafted_sleeper_ids = []
+
+    for pick in picks:
+        player_id = pick.get("player_id")
+        metadata = pick.get("metadata") or {}
+
+        if player_id:
+            drafted_sleeper_ids.append(player_id)
+
+        first_name = metadata.get("first_name", "")
+        last_name = metadata.get("last_name", "")
+        player_name = f"{first_name} {last_name}".strip()
+
+        if player_name:
+            drafted_player_names.append(player_name)
+        elif isinstance(player_id, str) and player_id.isalpha():
+            drafted_player_names.append(player_id.upper())
+
+    return drafted_player_names, drafted_sleeper_ids
 
 
 def run_draft_optimizer():
@@ -2048,15 +2037,68 @@ def run_draft_optimizer():
     else:
         st.caption(f"Using model predictions from {prediction_source}.")
 
-    drafted_players = st.multiselect(
-        "Players Already Drafted",
-        options=players["player"].tolist(),
+    sleeper_drafted_players = []
+    sleeper_drafted_ids = []
+    league_id = get_selected_sleeper_league_id()
+
+    if league_id:
+        st.write("Selected League ID:", league_id)
+
+        try:
+            league_drafts = load_sleeper_league_drafts(league_id)
+        except Exception as exc:
+            league_drafts = []
+            st.warning(f"Sleeper drafts could not be loaded: {exc}")
+
+        if league_drafts:
+            selected_draft = st.selectbox(
+                "Select Sleeper Draft",
+                options=league_drafts,
+                format_func=_draft_label,
+                key="draft_optimizer_selected_draft",
+            )
+            selected_draft_id = selected_draft.get("draft_id")
+            st.write("Selected Draft ID:", selected_draft_id)
+
+            if st.button("Refresh Draft Picks", key="refresh_draft_optimizer_picks"):
+                load_sleeper_draft_picks.clear()
+
+            try:
+                picks = load_sleeper_draft_picks(selected_draft_id)
+                sleeper_drafted_players, sleeper_drafted_ids = _drafted_players_from_picks(
+                    picks
+                )
+                st.caption(
+                    f"Removed {len(sleeper_drafted_ids)} drafted players from Sleeper."
+                )
+            except Exception as exc:
+                st.warning(f"Sleeper draft picks could not be loaded: {exc}")
+        else:
+            st.caption("No Sleeper draft found for this league yet.")
+    else:
+        st.caption("Select a Sleeper league to remove drafted players automatically.")
+
+    drafted_text = st.text_area(
+        "Additional Drafted Players",
+        placeholder="Type drafted players separated by commas, like: Bijan Robinson, Jahmyr Gibbs",
+        height=80,
     )
+    manually_drafted_players = [
+        player.strip()
+        for player in drafted_text.split(",")
+        if player.strip()
+    ]
+    drafted_players = sleeper_drafted_players + manually_drafted_players
+
     position = st.selectbox(
         "Rank By Position",
         options=["All Positions", *sorted(players["position"].dropna().unique())],
     )
-    ranked_players = rank_players(players, drafted_players)
+    ranked_players = rank_players(
+        players,
+        drafted_players=drafted_players,
+        drafted_sleeper_ids=sleeper_drafted_ids,
+    )
     if position != "All Positions":
         ranked_players = ranked_players[ranked_players["position"] == position]
 
@@ -2093,11 +2135,31 @@ def run_draft_optimizer():
         ]
     ].copy()
     display_players["Team"] = display_players["Team"].fillna("")
+    display_players["Predicted Points"] = display_players["Predicted Points"].round(2)
+    display_players["Replacement Points"] = display_players["Replacement Points"].round(2)
+    display_players["Value Over Replacement"] = display_players[
+        "Value Over Replacement"
+    ].round(2)
 
-    st.dataframe(
-        display_players,
-        hide_index=True,
-        use_container_width=True,
+    max_recommendations = max(10, min(200, len(display_players)))
+    rows_to_show = st.number_input(
+        "Recommendations To Show",
+        min_value=10,
+        max_value=max_recommendations,
+        value=min(50, max_recommendations),
+        step=10,
+    )
+    display_players = display_players.head(rows_to_show)
+
+    st.markdown(
+        _flatten_html(
+            f"""
+            <div class="dataframe-shell">
+                {display_players.to_html(index=False, escape=True)}
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
     )
 
 
