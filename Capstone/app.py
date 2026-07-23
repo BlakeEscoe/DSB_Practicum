@@ -1783,17 +1783,6 @@ def run_sleeper():
                 run_trade_finder()
 
 
-"""
-@st.cache_data(ttl=300)
-def load_trade_recommendations(league_id, roster_id, min_gain):
-    from trades import find_mutually_beneficial_trades
-
-    return find_mutually_beneficial_trades(
-        league_id=league_id,
-        team_id=roster_id,
-        min_gain=min_gain,
-    )
-"""
 @st.cache_data(ttl=300)
 def load_optimized_lineups(league_id, scoring_parameters):
     import lineups
@@ -1880,66 +1869,6 @@ def get_user_roster_id(league_id):
 
     return None
 
-"""
-def run_trade_finder():
-    league_id = get_selected_sleeper_league_id()
-
-    if not league_id:
-        st.info("Select a Sleeper league first.")
-        return
-
-    roster_id = get_user_roster_id(league_id)
-
-    if roster_id is None:
-        st.warning("Could not find your roster in the selected league.")
-        return
-
-    st.write("Selected League ID:", league_id)
-    st.write("Your Roster ID:", roster_id)
-
-    min_gain = st.number_input(
-        "Minimum weekly gain for both teams",
-        min_value=0.0,
-        value=0.1,
-        step=0.1,
-    )
-
-    if not st.button("Find Trade Ideas", key="find_trade_ideas"):
-        return
-
-    try:
-        with st.spinner("Finding mutually beneficial trades..."):
-            trade_recommendations = load_trade_recommendations(
-                league_id,
-                roster_id,
-                min_gain,
-            )
-    except Exception as exc:
-        st.warning(f"Trade recommendations could not be loaded: {exc}")
-        return
-
-    if trade_recommendations.empty:
-        st.info("No mutually beneficial trades found with the current settings.")
-        return
-
-    display_trades = trade_recommendations.rename(
-        columns={
-            "team_a": "Your Team",
-            "team_b": "Trade Partner",
-            "team_a_gives": "You Give",
-            "team_b_gives": "You Receive",
-            "team_a_gain": "Your Weekly Gain",
-            "team_b_gain": "Partner Weekly Gain",
-            "combined_gain": "Combined Gain",
-        }
-    )
-
-    st.dataframe(
-        pl.from_pandas(display_trades),
-        hide_index=True,
-        use_container_width=True,
-    )
-"""
 def run_trade_finder():
     league_id = get_selected_sleeper_league_id()
 
