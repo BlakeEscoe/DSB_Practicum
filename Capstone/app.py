@@ -1783,6 +1783,7 @@ def run_sleeper():
                 run_trade_finder()
 
 
+"""
 @st.cache_data(ttl=300)
 def load_trade_recommendations(league_id, roster_id, min_gain):
     from trades import find_mutually_beneficial_trades
@@ -1792,6 +1793,60 @@ def load_trade_recommendations(league_id, roster_id, min_gain):
         team_id=roster_id,
         min_gain=min_gain,
     )
+"""
+@st.cache_data(ttl=300)
+def load_optimized_lineups(league_id, scoring_parameters):
+    import lineups
+
+    return lineups.optimize_starting_lineups(
+        league_id,
+        scoring_parameters=scoring_parameters,
+    )
+
+
+@st.cache_data(ttl=300)
+def load_best_trades(
+    league_id,
+    roster_id,
+    position,
+    scoring_parameters,
+):
+    from trades import get_best_trades_by_position
+
+    optimized_lineups = load_optimized_lineups(
+        league_id,
+        scoring_parameters,
+    )
+
+    return get_best_trades_by_position(
+        league_id=league_id,
+        team_id=roster_id,
+        position=position,
+        optimized_lineups=optimized_lineups,
+        scoring_parameters=scoring_parameters,
+    )
+
+
+@st.cache_data(ttl=300)
+def load_lineup_improvement_trades(
+    league_id,
+    roster_id,
+    scoring_parameters,
+):
+    from trades import get_trades_to_improve_both_starting_lineups
+
+    optimized_lineups = load_optimized_lineups(
+        league_id,
+        scoring_parameters,
+    )
+
+    return get_trades_to_improve_both_starting_lineups(
+        league_id=league_id,
+        team_id=roster_id,
+        optimized_lineups=optimized_lineups,
+        scoring_parameters=scoring_parameters,
+    )
+
 
 
 def get_selected_sleeper_league_id():
@@ -1825,7 +1880,7 @@ def get_user_roster_id(league_id):
 
     return None
 
-
+"""
 def run_trade_finder():
     league_id = get_selected_sleeper_league_id()
 
@@ -1884,6 +1939,97 @@ def run_trade_finder():
         hide_index=True,
         use_container_width=True,
     )
+"""
+def run_trade_finder():
+    league_id = get_selected_sleeper_league_id()
+
+    if not league_id:
+        st.info("Select a Sleeper league first.")
+        return
+
+    roster_id = get_user_roster_id(league_id)
+
+    if roster_id is None:
+        st.warning("Could not find your roster in the selected league.")
+        return
+
+    st.write("Selected League ID:", league_id)
+    st.write("Your Roster ID:", roster_id)
+
+    scoring_parameters = st.selectbox(
+        "Player Values",
+        [
+            "past_stats",
+            "projections",
+        ],
+    )
+
+    # ------------------------------------------------------------------
+    # Trades Good for Both
+    # ------------------------------------------------------------------
+    st.subheader("Trades Good for Both")
+
+    if st.button("Find Improve Both Lineups Trades"):
+        try:
+            with st.spinner("Searching for mutually beneficial trades..."):
+                trades = load_lineup_improvement_trades(
+                    league_id,
+                    roster_id,
+                    scoring_parameters,
+                )
+
+            if trades.empty:
+                st.info("No trades found.")
+            else:
+                st.dataframe(
+                    pl.from_pandas(trades),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+        except Exception as exc:
+            st.warning(f"Trade search failed: {exc}")
+
+    st.divider()
+
+    # ------------------------------------------------------------------
+    # Trades They'll Say Yes To
+    # ------------------------------------------------------------------
+    st.subheader("Trades They'll Say Yes To")
+
+    position = st.selectbox(
+        "Position",
+        [
+            "QB",
+            "RB",
+            "WR",
+            "TE",
+        ],
+        key="trade_position",
+    )
+
+    if st.button("Find Best Position Trades"):
+        try:
+            with st.spinner("Searching for trades..."):
+                trades = load_best_trades(
+                    league_id,
+                    roster_id,
+                    position,
+                    scoring_parameters,
+                )
+
+            if trades.empty:
+                st.info("No trades found.")
+            else:
+                st.dataframe(
+                    pl.from_pandas(trades),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+        except Exception as exc:
+            st.warning(f"Trade search failed: {exc}")
+
 
 
 @st.cache_data(ttl=60)

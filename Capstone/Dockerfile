@@ -6,10 +6,13 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY Capstone/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY src ./src
+COPY Capstone .
+
+ENV PYTHONPATH=/app/src
 
 ENV PORT=8080
 
