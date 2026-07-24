@@ -1926,6 +1926,10 @@ def run_trade_finder():
                 st.info("No trades found.")
             else:
                 show_trade_table(trades)
+                st.button(
+                    "Hide Results",
+                    key="hide_lineup_improvement_trades",
+                )
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")
@@ -1962,6 +1966,10 @@ def run_trade_finder():
                 st.info("No trades found.")
             else:
                 show_trade_table(trades)
+                st.button(
+                    "Hide Results",
+                    key="hide_best_position_trades",
+                )
 
         except Exception as exc:
             st.warning(f"Trade search failed: {exc}")
