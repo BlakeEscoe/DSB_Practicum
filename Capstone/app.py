@@ -1913,7 +1913,20 @@ def run_trade_finder():
     # ------------------------------------------------------------------
     st.subheader("Trades Good for Both")
 
+    # NOTE ON THE FIX: st.button() only returns True on the exact rerun that
+    # follows the click - Streamlit reruns the whole script on every
+    # interaction, and on every later rerun (touching an unrelated widget
+    # elsewhere on the page, an autorefresh, etc.) the button goes back to
+    # False. This function used to compute the trades table AND render it
+    # inside `if st.button(...)`, so the results only ever survived for that
+    # one rerun and then vanished ("the page refreshes and erases the
+    # results"). The fix: compute-and-cache into st.session_state only when
+    # the button is freshly clicked, but render unconditionally from
+    # session_state below so the table (or error) sticks around across
+    # later, unrelated reruns - the same pattern already used for
+    # `stat_search_answer` in run_stat_search().
     if st.button("Find Improve Both Lineups Trades"):
+        st.session_state.pop("improve_both_trades_error", None)
         try:
             with st.spinner("Searching for mutually beneficial trades..."):
                 trades = load_lineup_improvement_trades(
@@ -1921,14 +1934,19 @@ def run_trade_finder():
                     roster_id,
                     scoring_parameters,
                 )
-
-            if trades.empty:
-                st.info("No trades found.")
-            else:
-                show_trade_table(trades)
-
+            st.session_state["improve_both_trades"] = trades
         except Exception as exc:
-            st.warning(f"Trade search failed: {exc}")
+            st.session_state.pop("improve_both_trades", None)
+            st.session_state["improve_both_trades_error"] = str(exc)
+
+    if "improve_both_trades_error" in st.session_state:
+        st.warning(f"Trade search failed: {st.session_state['improve_both_trades_error']}")
+    elif "improve_both_trades" in st.session_state:
+        trades = st.session_state["improve_both_trades"]
+        if trades.empty:
+            st.info("No trades found.")
+        else:
+            show_trade_table(trades)
 
     st.divider()
 
@@ -1948,7 +1966,11 @@ def run_trade_finder():
         key="trade_position",
     )
 
+    # Same session_state-caching fix as above, applied to the second button
+    # so its results also survive unrelated reruns (e.g. touching the
+    # "Player Values" or "Position" selectboxes after a search).
     if st.button("Find Best Position Trades"):
+        st.session_state.pop("position_trades_error", None)
         try:
             with st.spinner("Searching for trades..."):
                 trades = load_best_trades(
@@ -1957,14 +1979,19 @@ def run_trade_finder():
                     position,
                     scoring_parameters,
                 )
-
-            if trades.empty:
-                st.info("No trades found.")
-            else:
-                show_trade_table(trades)
-
+            st.session_state["position_trades"] = trades
         except Exception as exc:
-            st.warning(f"Trade search failed: {exc}")
+            st.session_state.pop("position_trades", None)
+            st.session_state["position_trades_error"] = str(exc)
+
+    if "position_trades_error" in st.session_state:
+        st.warning(f"Trade search failed: {st.session_state['position_trades_error']}")
+    elif "position_trades" in st.session_state:
+        trades = st.session_state["position_trades"]
+        if trades.empty:
+            st.info("No trades found.")
+        else:
+            show_trade_table(trades)
 
 
 
