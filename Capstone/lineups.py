@@ -26,7 +26,7 @@ def get_league_users(league_id):
 
 
 def get_player_stats(season=2025):
-    player_stats = nfl.load_player_stats(list(range(2000, 2026))).to_pandas()
+    player_stats = nfl.load_player_stats([season]).to_pandas()
     player_stats = player_stats[(player_stats['season'] == season) & (player_stats['season_type'] == 'REG')]
     player_stats['fantasy_ppr_points'] = player_stats['passing_tds']*4 + player_stats['passing_yards']*0.04 + player_stats['passing_interceptions']*-1 + player_stats['passing_2pt_conversions']*2 + player_stats['rushing_yards']*0.1 + player_stats['receiving_yards']*0.1 + player_stats['rushing_tds']*6 + player_stats['receiving_tds']*6 + player_stats['rushing_2pt_conversions']*2 + player_stats['receiving_2pt_conversions']*2 + player_stats['receptions']*1 + player_stats['fumbles_lost_total']*-1
     player_stats = (player_stats.groupby(['player_display_name','position','team']).agg(ppr_ppg=('fantasy_ppr_points', 'mean')).reset_index())
@@ -69,7 +69,7 @@ def get_league_rosters(league_id):
     users = get_league_users(league_id)
 
     owner_lookup = {
-        user["user_id"]: {
+        str(user["user_id"]): {
             "owner_name": user.get("display_name"),
             "team_name": (
                 user.get("metadata", {}).get("team_name")
@@ -82,7 +82,18 @@ def get_league_rosters(league_id):
     league_rosters = []
 
     for roster in rosters:
-        owner = owner_lookup.get(roster.get("owner_id"), {})
+        roster_owner_ids = [
+            roster.get("owner_id"),
+            *(roster.get("co_owners") or []),
+        ]
+        owner = next(
+            (
+                owner_lookup[str(owner_id)]
+                for owner_id in roster_owner_ids
+                if owner_id is not None and str(owner_id) in owner_lookup
+            ),
+            {},
+        )
 
         for player_id in roster.get("players", []):
 
@@ -91,7 +102,11 @@ def get_league_rosters(league_id):
                 continue
 
             league_rosters.append({
-                "fantasy_team": owner.get("team_name"),
+                "fantasy_team": (
+                    owner.get("owner_name")
+                    or owner.get("team_name")
+                    or f"Roster {roster['roster_id']}"
+                ),
                 "owner_name": owner.get("owner_name"),
                 "roster_id": roster["roster_id"],
                 "owner_id": roster.get("owner_id"),

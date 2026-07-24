@@ -1947,6 +1947,12 @@ def run_trade_finder():
             st.info("No trades found.")
         else:
             show_trade_table(trades)
+            if st.button(
+                "Hide Results",
+                key="hide_lineup_improvement_trades",
+            ):
+                st.session_state.pop("improve_both_trades", None)
+                st.rerun()
 
     st.divider()
 
@@ -1992,6 +1998,12 @@ def run_trade_finder():
             st.info("No trades found.")
         else:
             show_trade_table(trades)
+            if st.button(
+                "Hide Results",
+                key="hide_best_position_trades",
+            ):
+                st.session_state.pop("position_trades", None)
+                st.rerun()
 
 
 
