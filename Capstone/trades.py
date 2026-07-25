@@ -342,15 +342,12 @@ def find_mutually_beneficial_trades(
     if not possible_trades:
         return pd.DataFrame()
 
-
-    return (
-        pd.DataFrame(possible_trades)
-        .sort_values(
+    trades_df = pd.DataFrame(possible_trades).sort_values(
             "combined_gain",
             ascending=False
-        )
-        .reset_index(drop=True)
-    )
+        ).reset_index(drop=True)
+
+    return trades_df
 
 def get_best_trades_by_position(league_id, team_id, position, optimized_lineups, scoring_parameters):
     # scoring_parameters can be "past_stats", "projections"
@@ -440,6 +437,8 @@ def get_best_trades_by_position(league_id, team_id, position, optimized_lineups,
             ascending=True
         )
     )
+
+    trades = trades.drop(columns=['score_value_team_a', 'starting_team_a', 'weight_team_a', 'score_value_team_b', 'starting_team_b', 'weight_team_b', 'weight_diff'])
 
     return trades
 
@@ -584,6 +583,8 @@ def get_trades_to_improve_both_starting_lineups(league_id, team_id, optimized_li
 
     trades = pd.DataFrame(trades)
     #trades = trades[trades["ppr_ppg_team_a"] >= trades["ppr_ppg_team_b"]]
+
+    trades = trades.drop(columns=['score_value_team_a', 'starting_team_a', 'trade_id', 'score_value_team_b', 'starting_team_b'])
 
     return trades
 

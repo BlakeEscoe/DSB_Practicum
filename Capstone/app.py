@@ -1782,6 +1782,13 @@ def run_sleeper():
             with st.expander("Trade Finder", expanded=True):
                 run_trade_finder()
 
+        if st.button("Optimized Lineups", key="show_optimized_lineups"):
+            st.session_state["optimized_lineups_open"] = True
+
+        if st.session_state.get("optimized_lineups_open"):
+            with st.expander("Optimized Lineups", expanded=True):
+                run_optimized_lineups()
+
 
 @st.cache_data(ttl=300)
 def load_optimized_lineups(league_id, scoring_parameters):
@@ -2005,6 +2012,90 @@ def run_trade_finder():
                 st.session_state.pop("position_trades", None)
                 st.rerun()
 
+
+
+def show_optimized_lineups(optimized_lineups):
+    display_columns = {
+        "player_name": "Player",
+        "position": "Position",
+        "nfl_team": "Team",
+        "starting_position": "Lineup Slot",
+        "ppr_ppg": "PPR PPG",
+    }
+
+    for roster_id, team in optimized_lineups.groupby("roster_id"):
+        team_name = team["fantasy_team"].iloc[0] if "fantasy_team" in team else f"Roster {roster_id}"
+        optimal_points = team["optimal_points"].iloc[0] if "optimal_points" in team else None
+
+        title = f"{team_name}"
+        if optimal_points is not None:
+            title += f" — {optimal_points:.2f} optimal pts"
+
+        with st.expander(title, expanded=False):
+            starters = team[team["starting"] == True].copy()
+            bench = team[team["starting"] == False].copy()
+
+            starters = starters.sort_values("starting_position")
+
+            for df, label in ((starters, "Starters"), (bench, "Bench")):
+                st.markdown(f"**{label}**")
+
+                if df.empty:
+                    st.caption("No players found.")
+                    continue
+
+                display_df = df[list(display_columns.keys())].rename(columns=display_columns)
+                display_df["PPR PPG"] = display_df["PPR PPG"].round(2)
+
+                st.dataframe(
+                    display_df,
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+
+def run_optimized_lineups():
+    league_id = get_selected_sleeper_league_id()
+
+    if not league_id:
+        st.info("Select a Sleeper league first.")
+        return
+
+    st.write("Selected League ID:", league_id)
+
+    scoring_parameters = st.selectbox(
+        "Player Values",
+        [
+            "actual_ppg",
+            "projections",
+            "draft_value",
+        ],
+        key="optimized_lineups_scoring_parameters",
+    )
+
+    if st.button("Load Optimized Lineups", key="load_optimized_lineups"):
+        try:
+            st.session_state["optimized_lineups_result"] = load_optimized_lineups(
+                league_id,
+                scoring_parameters,
+            )
+            st.session_state.pop("optimized_lineups_error", None)
+        except Exception as exc:
+            st.session_state.pop("optimized_lineups_result", None)
+            st.session_state["optimized_lineups_error"] = str(exc)
+
+    if "optimized_lineups_error" in st.session_state:
+        st.warning(f"Optimized lineups could not be loaded: {st.session_state['optimized_lineups_error']}")
+    elif "optimized_lineups_result" in st.session_state:
+        optimized_lineups = st.session_state["optimized_lineups_result"]
+
+        if optimized_lineups.empty:
+            st.info("No optimized lineups found.")
+        else:
+            show_optimized_lineups(optimized_lineups)
+            if st.button("Hide Results", key="hide_optimized_lineups"):
+                st.session_state.pop("optimized_lineups_result", None)
+                st.rerun()
 
 
 @st.cache_data(ttl=60)
