@@ -34,6 +34,7 @@ def get_player_stats(season=2025):
     draft_ranking_players = player_stats[["player_display_name","position","team","ppr_ppg"]]
     draft_ranking_players.columns = ['player', 'position', 'team', 'predicted_points']
     draft_ranking_players = draft.rank_players(draft_ranking_players)
+    draft_ranking_players.drop(columns='season_predicted_points', inplace=True)
     draft_ranking_players.columns = ['player_display_name', 'position', 'team', 'predicted_points', 'replacement_points', 'value_over_replacement']
 
     player_stats = player_stats.merge(draft_ranking_players,
