@@ -300,17 +300,23 @@ def suggest_names(df: pl.DataFrame, query: str, limit: int = 20) -> list[str]:
     if not normalized_query:
         return []
 
-    candidate_columns = [
-        col for col in (
-            "player_display_name",
-            "player_name",
-            "display_name",
-            "name",
-            "recent_team",
-            "team",
-        )
-        if col in df.columns
-    ]
+    candidate_columns = []
+    for col in (
+        "player_display_name",
+        "player_name",
+        "display_name",
+        "name",
+        "recent_team",
+        "team",
+    ):
+        if col not in df.columns:
+            continue
+        # player_name holds nflreadpy's abbreviated "J.Goff" form of the same
+        # player already covered by player_display_name ("Jared Goff") -
+        # including both produces duplicate suggestions for one person.
+        if col == "player_name" and "player_display_name" in df.columns:
+            continue
+        candidate_columns.append(col)
 
     candidate_values: list[str] = []
     for col in candidate_columns:
@@ -475,7 +481,13 @@ def summarize_player(
         return None
 
     if stat is None:
-        stat = best_player_stat(matches)
+        # A bare player-name query (no stat keyword) should project overall
+        # fantasy points, not whichever counting stat happens to total
+        # highest for that player's position (e.g. rushing yards for a RB).
+        stat = next(
+            (col for col in ("fantasy_points_ppr", "fantasy_points") if col in matches.columns),
+            None,
+        ) or best_player_stat(matches)
 
     names = [str(name) for name in matches.select(name_column).to_series().to_list()]
     player_name = Counter(names).most_common(1)[0][0]
@@ -993,7 +1005,8 @@ def _player_summary_text(player_name: str, projection: dict[str, Any] | None) ->
     if not projection:
         return f"Found recent rows for {player_name}."
 
-    stat = projection["stat"].replace("_", " ")
+    raw_stat = projection["stat"]
+    stat = "fantasy points" if raw_stat == "fantasy_points_ppr" else raw_stat.replace("_", " ")
     return (
         f"{player_name} projects around {projection['projection']} {stat} next game "
         f"from a {projection['sample_size']}-game sample; recent trend is "
