@@ -2164,8 +2164,6 @@ def run_draft_optimizer():
             "Using the sample Draft Optimizer data because model predictions "
             f"could not be loaded from {prediction_source}."
         )
-    else:
-        st.caption(f"Using model predictions from {prediction_source}.")
 
     sleeper_drafted_players = []
     sleeper_drafted_ids = []
@@ -2237,9 +2235,8 @@ def run_draft_optimizer():
             """
 - **Player:** The player's name.
 - **Position:** The player's fantasy position, such as QB, RB, WR, TE, K, or DEF.
-- **Team:** The player's current NFL team abbreviation.
-- **Predicted Points:** The player's estimated fantasy points from the model projections.
-- **Replacement Points:** The expected points from a readily available player at the same position.
+- **Predicted Points Per Game:** The player's average weekly fantasy points from the model projections.
+- **Season Predicted Points:** The player's projected fantasy points across the full season.
 - **Value Over Replacement:** How many more points the player is projected to score than a replacement-level option. Higher is better.
 """
         )
@@ -2248,9 +2245,8 @@ def run_draft_optimizer():
         columns={
             "player": "Player",
             "position": "Position",
-            "team": "Team",
-            "predicted_points": "Predicted Points",
-            "replacement_points": "Replacement Points",
+            "predicted_points": "Predicted Points Per Game",
+            "season_predicted_points": "Season Predicted Points",
             "value_over_replacement": "Value Over Replacement",
         }
     )
@@ -2258,15 +2254,17 @@ def run_draft_optimizer():
         [
             "Player",
             "Position",
-            "Team",
-            "Predicted Points",
-            "Replacement Points",
+            "Predicted Points Per Game",
+            "Season Predicted Points",
             "Value Over Replacement",
         ]
     ].copy()
-    display_players["Team"] = display_players["Team"].fillna("")
-    display_players["Predicted Points"] = display_players["Predicted Points"].round(2)
-    display_players["Replacement Points"] = display_players["Replacement Points"].round(2)
+    display_players["Predicted Points Per Game"] = display_players[
+        "Predicted Points Per Game"
+    ].round(2)
+    display_players["Season Predicted Points"] = display_players[
+        "Season Predicted Points"
+    ].round(2)
     display_players["Value Over Replacement"] = display_players[
         "Value Over Replacement"
     ].round(2)
