@@ -2042,8 +2042,6 @@ def run_draft_optimizer():
             "Using the sample Draft Optimizer data because model predictions "
             f"could not be loaded from {prediction_source}."
         )
-    else:
-        st.caption(f"Using model predictions from {prediction_source}.")
 
     sleeper_drafted_players = []
     sleeper_drafted_ids = []
