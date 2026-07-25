@@ -42,7 +42,7 @@ def _normalize_player_name(player_name):
 
 def _prepare_predictions_for_optimizer(predictions):
     # The model output is weekly. The draft optimizer needs one row per player,
-    # so we average the weekly predictions into one predicted_points value.
+    # so we keep both the weekly average and the full-season total.
     players = pd.DataFrame()
     players["player"] = predictions["player_name"].astype(object)
     players["position"] = (
@@ -65,9 +65,15 @@ def _prepare_predictions_for_optimizer(predictions):
 
     return (
         players.dropna(subset=["player", "position", "predicted_points"])
-        .groupby(["player", "sleeper_id", "position", "team"], dropna=False, as_index=False)
-        ["predicted_points"]
-        .mean()
+        .groupby(
+            ["player", "sleeper_id", "position", "team"],
+            dropna=False,
+            as_index=False,
+        )
+        .agg(
+            predicted_points=("predicted_points", "mean"),
+            season_predicted_points=("predicted_points", "sum"),
+        )
     )
 
 
@@ -94,6 +100,9 @@ def load_player_predictions(season=2025):
             )
 
         sample_players = pd.read_csv(SAMPLE_PREDICTIONS_FILE)
+        sample_players["season_predicted_points"] = (
+            sample_players["predicted_points"] * 17
+        )
 
         return (
             sample_players,
@@ -118,6 +127,12 @@ def rank_players(players, drafted_players=None, drafted_sleeper_ids=None):
 
     # Make a copy so we do not accidentally change the original DataFrame.
     ranked_players = players.copy()
+
+    # Older/sample inputs may not have a season total, so create one if needed.
+    if "season_predicted_points" not in ranked_players.columns:
+        ranked_players["season_predicted_points"] = (
+            ranked_players["predicted_points"] * 17
+        )
 
     # drafted_sleeper_ids is optional.
     # If Sleeper IDs are available, they are the safest way to remove drafted players.
