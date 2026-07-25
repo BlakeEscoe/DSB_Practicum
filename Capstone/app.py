@@ -7,6 +7,7 @@ from typing import Any
 import altair as alt
 import polars as pl
 import streamlit as st
+import streamlit.components.v1 as components
 import nflreadpy
 from streamlit_searchbox import st_searchbox
 
@@ -57,6 +58,79 @@ except Exception as exc:
     st.stop()
 
 st.set_page_config(page_title="Fantasy Pathfinder", layout="wide")
+
+st.markdown(
+    """
+    <style>
+      .stButton > button {
+        border: none;
+        border-radius: 999px;
+        padding: 0.55rem 1.6rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+        color: #052e1f;
+        box-shadow: 0 2px 10px rgba(5, 150, 105, 0.35);
+        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+      }
+      .stButton > button:hover {
+        filter: brightness(1.08);
+        box-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+        transform: translateY(-1px);
+        color: #052e1f;
+      }
+      .stButton > button:active {
+        transform: translateY(0);
+        filter: brightness(0.96);
+      }
+      .stButton > button:focus:not(:active) {
+        color: #052e1f;
+      }
+      .stButton > button p {
+        color: inherit;
+        font-weight: 700;
+      }
+      div[data-testid="stFormSubmitButton"] > button {
+        background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
+        color: #1e1b3a;
+        box-shadow: 0 2px 10px rgba(124, 58, 237, 0.35);
+      }
+      div[data-testid="stFormSubmitButton"] > button p {
+        color: #1e1b3a;
+      }
+      div[data-testid="stRadio"] > div[role="radiogroup"] {
+        display: inline-flex;
+        gap: 0.4rem;
+        background: rgba(148, 163, 184, 0.12);
+        padding: 4px;
+        border-radius: 999px;
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"] {
+        margin: 0;
+        padding: 0.45rem 1.2rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child {
+        display: none;
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
+        font-weight: 600;
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+        background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+        color: #052e1f;
+      }
+      div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:has(input:checked)):hover {
+        background: rgba(52, 211, 153, 0.18);
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -203,9 +277,153 @@ def show_roster(roster):
             )
 
 
-st.title("Fantasy Pathfinder")
+components.html(
+    """
+    <script>
+      (function () {
+        const parentDoc = window.parent.document;
+        const STORAGE_KEY = 'stActiveTheme-/-v2';
+
+        function currentTheme() {
+          try {
+            const raw = window.parent.localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function paint(container, active) {
+          container.querySelectorAll('button').forEach((btn) => {
+            if (btn.dataset.theme === active) {
+              btn.style.background = 'linear-gradient(135deg, #34d399 0%, #059669 100%)';
+              btn.style.color = '#052e1f';
+            } else {
+              btn.style.background = 'transparent';
+              btn.style.color = '#8a94a6';
+            }
+          });
+        }
+
+        function applyTheme(theme) {
+          const menuBtn = parentDoc.querySelector('[data-testid="stMainMenuButton"]');
+          if (!menuBtn) return;
+
+          // The native theme picker lives inside the "..." menu. Clicking
+          // through it is the only way to actually flip Streamlit's theme,
+          // but we don't want that menu visibly flashing open, so it's
+          // hidden with an inline style for the duration of the sequence.
+          const hideStyle = parentDoc.createElement('style');
+          hideStyle.textContent =
+            '[data-testid="stMainMenuPopover"]{opacity:0!important;pointer-events:none!important;}';
+          parentDoc.head.appendChild(hideStyle);
+
+          // BaseWeb's popover positioning logic auto-scrolls the app's
+          // scroll container to bring the (hidden) popover into view,
+          // even though it's invisible - repeatedly, across several
+          // frames. Pin the scroll position back for the whole sequence.
+          const scrollContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
+          const scrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
+          const lockScroll = () => {
+            if (scrollContainer) scrollContainer.scrollLeft = scrollLeft;
+          };
+          if (scrollContainer) scrollContainer.addEventListener('scroll', lockScroll);
+
+          menuBtn.click();
+          setTimeout(() => {
+            const item = parentDoc.querySelector(
+              `[data-testid="stMainMenuItem-theme-${theme}"]`
+            );
+            if (item) item.click();
+            setTimeout(() => {
+              menuBtn.click();
+              menuBtn.blur();
+              hideStyle.remove();
+              lockScroll();
+              setTimeout(() => {
+                if (scrollContainer) scrollContainer.removeEventListener('scroll', lockScroll);
+              }, 400);
+            }, 100);
+          }, 100);
+        }
+
+        function init() {
+          // stToolbar spans the whole header row - anchor off the actions
+          // cluster (Deploy + "...") itself so we sit just to its left.
+          const anchor =
+            parentDoc.querySelector('[data-testid="stToolbarActions"]') ||
+            parentDoc.querySelector('[data-testid="stMainMenu"]');
+          if (!anchor) {
+            setTimeout(init, 150);
+            return;
+          }
+
+          let wrap = parentDoc.getElementById('theme-toggle-toolbar');
+          const active = currentTheme() || 'Dark';
+
+          function position() {
+            const rect = anchor.getBoundingClientRect();
+            wrap.style.top = rect.top + 'px';
+            wrap.style.right = (parentDoc.defaultView.innerWidth - rect.left + 10) + 'px';
+          }
+
+          if (!wrap) {
+            wrap = parentDoc.createElement('div');
+            wrap.id = 'theme-toggle-toolbar';
+            // Fixed-position overlay next to the native toolbar, rather
+            // than a child of it - inserting into stToolbar's own flex
+            // layout broke it (Deploy/menu button disappeared).
+            wrap.style.cssText =
+              'position:fixed; z-index:1000000; display:flex; gap:0.3rem; ' +
+              'background:rgba(148,163,184,0.12); padding:3px; border-radius:999px;';
+
+            ['Light', 'Dark'].forEach((theme) => {
+              const btn = parentDoc.createElement('button');
+              btn.textContent = theme;
+              btn.dataset.theme = theme;
+              btn.style.cssText =
+                'all:unset; cursor:pointer; padding:0.3rem 0.85rem; border-radius:999px; ' +
+                'font-weight:600; font-size:13px;';
+              btn.addEventListener('click', () => {
+                paint(wrap, theme);
+                applyTheme(theme);
+              });
+              wrap.appendChild(btn);
+            });
+
+            parentDoc.body.appendChild(wrap);
+            parentDoc.defaultView.addEventListener('resize', position);
+          }
+
+          position();
+          paint(wrap, active);
+
+          // First-ever visit: no stored preference yet, so force the
+          // real Dark theme once to match our default-active button.
+          if (!currentTheme()) {
+            applyTheme('Dark');
+          }
+        }
+
+        init();
+      })();
+    </script>
+    """,
+    height=0,
+)
+
 st.markdown(
-    "Search recent nflreadpy player stats with splits, comparisons, and Sleeper league integration."
+    """
+    <div style="padding: 0.2rem 0 1rem;">
+      <h1 style="margin: 0 0 0.4rem 0; font-size: 2.9rem; font-weight: 800; letter-spacing: 0.01em;">
+        Fantasy Pathfinder
+      </h1>
+      <p style="margin: 0; font-size: 1.05rem; font-weight: 500; opacity: 0.92;">
+        Search player stats with splits, comparison, and Sleeper league integration.
+      </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 # --- ESPN-style stat splits -------------------------------------------------
@@ -1482,9 +1700,9 @@ def render_result(answer: dict[str, any]) -> None:
     if projection:
         with st.expander("Projection Details", expanded=True):
             st.metric("Projection", projection.get("projection"))
-            st.metric("Recent Average", projection.get("recent_average"))
-            st.metric("Sample Average", projection.get("sample_average"))
-            st.metric("Trend", projection.get("direction"))
+            st.metric("Avg Over Last 3 Games", projection.get("recent_average"))
+            st.metric("Avg Over Last 6 Games", projection.get("sample_average"))
+            st.metric("Trend", (projection.get("direction") or "").capitalize())
             st.write(projection.get("method"))
 
     game_log = answer.get("game_log")
