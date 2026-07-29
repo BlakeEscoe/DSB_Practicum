@@ -59,75 +59,246 @@ try:
 except Exception as exc:
     NFLREADPY_IMPORT_ERROR = exc
 
-st.set_page_config(page_title="Fantasy Pathfinder", layout="wide")
-
+st.set_page_config(
+    page_title="Fantasy Pathfinder",
+    page_icon="assets/fantasy_pathfinder_logo.png",
+    layout="wide",
+)
 st.markdown(
     """
     <style>
-      .stButton > button {
+      /* Main page width and spacing */
+      .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+      }
+
+      /* Reduce Streamlit's default top whitespace */
+      [data-testid="stAppViewContainer"] > .main {
+        background:
+          radial-gradient(
+            circle at top right,
+            rgba(52, 211, 153, 0.07),
+            transparent 30%
+          );
+      }
+
+      /* Hero section */
+      .app-hero {
+        padding: 1.25rem 0 1.8rem;
+      }
+
+      .hero-badge {
+        display: inline-block;
+        margin-bottom: 0.8rem;
+        padding: 0.38rem 0.8rem;
+        border-radius: 999px;
+        background: rgba(52, 211, 153, 0.14);
+        color: #34d399;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .app-hero h1 {
+        margin: 0;
+        font-size: clamp(2.5rem, 5vw, 3.5rem);
+        line-height: 1.05;
+        font-weight: 850;
+        letter-spacing: -0.035em;
+      }
+
+      .app-hero p {
+        margin: 0.8rem 0 0;
+        max-width: 750px;
+        font-size: 1.08rem;
+        line-height: 1.65;
+        opacity: 0.76;
+      }
+
+      /* Section introduction */
+      .section-heading {
+        margin: 0.6rem 0 1.2rem;
+      }
+
+      .section-heading h2 {
+        margin: 0 0 0.3rem;
+        font-size: 1.7rem;
+        font-weight: 780;
+      }
+
+      .section-heading p {
+        margin: 0;
+        opacity: 0.7;
+        line-height: 1.5;
+      }
+
+      /* Feature cards */
+      .feature-card {
+        min-height: 160px;
+        padding: 1.2rem;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        background: rgba(148, 163, 184, 0.06);
+        transition:
+          transform 0.15s ease,
+          border-color 0.15s ease,
+          background 0.15s ease;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(52, 211, 153, 0.45);
+        background: rgba(52, 211, 153, 0.07);
+      }
+
+      .feature-card-title {
+        margin-bottom: 0.45rem;
+        font-size: 1.02rem;
+        font-weight: 750;
+      }
+
+      .feature-card-text {
+        font-size: 0.9rem;
+        line-height: 1.55;
+        opacity: 0.7;
+      }
+
+      /* Native Streamlit containers */
+      [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 16px;
+        border-color: rgba(148, 163, 184, 0.2);
+        background: rgba(148, 163, 184, 0.035);
+      }
+
+      /* Inputs */
+      [data-baseweb="select"] > div,
+      [data-baseweb="input"] > div,
+      [data-testid="stTextInput"] input {
+        border-radius: 10px;
+      }
+
+      /* General buttons */
+      .stButton > button,
+      div[data-testid="stFormSubmitButton"] > button {
         border: none;
         border-radius: 999px;
-        padding: 0.55rem 1.6rem;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+        padding: 0.58rem 1.65rem;
+        font-weight: 750;
+        letter-spacing: 0.01em;
+        background: linear-gradient(
+          135deg,
+          #34d399 0%,
+          #059669 100%
+        );
         color: #052e1f;
-        box-shadow: 0 2px 10px rgba(5, 150, 105, 0.35);
-        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+        box-shadow: 0 3px 12px rgba(5, 150, 105, 0.3);
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.12s ease,
+          filter 0.12s ease;
       }
-      .stButton > button:hover {
+
+      .stButton > button:hover,
+      div[data-testid="stFormSubmitButton"] > button:hover {
         filter: brightness(1.08);
-        box-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+        box-shadow: 0 5px 16px rgba(5, 150, 105, 0.45);
         transform: translateY(-1px);
         color: #052e1f;
       }
-      .stButton > button:active {
+
+      .stButton > button:active,
+      div[data-testid="stFormSubmitButton"] > button:active {
         transform: translateY(0);
-        filter: brightness(0.96);
+        filter: brightness(0.97);
       }
-      .stButton > button:focus:not(:active) {
-        color: #052e1f;
-      }
-      .stButton > button p {
-        color: inherit;
-        font-weight: 700;
-      }
-      div[data-testid="stFormSubmitButton"] > button {
-        background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
-        color: #1e1b3a;
-        box-shadow: 0 2px 10px rgba(124, 58, 237, 0.35);
-      }
+
+      .stButton > button p,
       div[data-testid="stFormSubmitButton"] > button p {
-        color: #1e1b3a;
+        color: inherit;
+        font-weight: 750;
       }
+
+      /* Navigation radio styled as tabs */
       div[data-testid="stRadio"] > div[role="radiogroup"] {
         display: inline-flex;
         gap: 0.4rem;
-        background: rgba(148, 163, 184, 0.12);
+        margin-bottom: 0.8rem;
         padding: 4px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 999px;
+        background: rgba(148, 163, 184, 0.1);
       }
+
       div[data-testid="stRadio"] label[data-baseweb="radio"] {
         margin: 0;
-        padding: 0.45rem 1.2rem;
+        padding: 0.48rem 1.25rem;
         border-radius: 999px;
         cursor: pointer;
-        transition: background 0.15s ease, color 0.15s ease;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
       }
-      div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child {
+
+      div[data-testid="stRadio"]
+      label[data-baseweb="radio"]
+      > div:first-child {
         display: none;
       }
-      div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-        font-weight: 600;
+
+      div[data-testid="stRadio"]
+      label[data-baseweb="radio"]
+      div[data-testid="stMarkdownContainer"] p {
+        font-weight: 650;
       }
-      div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
-        background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+
+      div[data-testid="stRadio"]
+      label[data-baseweb="radio"]:has(input:checked) {
+        background: linear-gradient(
+          135deg,
+          #34d399 0%,
+          #059669 100%
+        );
       }
-      div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+
+      div[data-testid="stRadio"]
+      label[data-baseweb="radio"]:has(input:checked) p {
         color: #052e1f;
       }
-      div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:has(input:checked)):hover {
-        background: rgba(52, 211, 153, 0.18);
+
+      div[data-testid="stRadio"]
+      label[data-baseweb="radio"]:not(:has(input:checked)):hover {
+        background: rgba(52, 211, 153, 0.15);
+      }
+
+      /* Dataframes */
+      [data-testid="stDataFrame"] {
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      /* Expander styling */
+      [data-testid="stExpander"] {
+        border-radius: 12px;
+        border-color: rgba(148, 163, 184, 0.18);
+      }
+
+      /* Mobile layout */
+      @media (max-width: 700px) {
+        .block-container {
+          padding-left: 1rem;
+          padding-right: 1rem;
+        }
+
+        .app-hero h1 {
+          font-size: 2.45rem;
+        }
+
+        .feature-card {
+          min-height: auto;
+        }
       }
     </style>
     """,
@@ -414,20 +585,42 @@ components.html(
     height=0,
 )
 
-st.markdown(
-    """
-    <div style="padding: 0.2rem 0 1rem;">
-      <h1 style="margin: 0 0 0.4rem 0; font-size: 2.9rem; font-weight: 800; letter-spacing: 0.01em;">
-        Fantasy Pathfinder
-      </h1>
-      <p style="margin: 0; font-size: 1.05rem; font-weight: 500; opacity: 0.92;">
-        Search player stats with splits, comparison, and Sleeper league integration.
-      </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+logo_col, title_col = st.columns(
+    [1, 7],
+    vertical_alignment="center",
 )
 
+with logo_col:
+    st.markdown("<div style='padding-top:80px'></div>", unsafe_allow_html=True)
+
+    st.image(
+        "assets/fantasy_pathfinder_logo.png",
+        width=150,
+    )
+
+with title_col:
+    st.markdown(
+        _flatten_html(
+            """
+            <div class="app-hero">
+
+                <div class="hero-badge">
+                    Fantasy Football Analytics
+                </div>
+
+                <h1>Fantasy Pathfinder</h1>
+
+                <p>
+                    Explore player performance, compare fantasy options,
+                    analyze fantasy trends, and manage your Sleeper leagues
+                    in one place.
+                </p>
+
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
 # --- ESPN-style stat splits -------------------------------------------------
 #
 # The player-week stats dataset only carries raw counting stats (completions,
@@ -1796,50 +1989,102 @@ def run_stat_search():
         )
         return
 
-    # Seasons and the search box live outside the form: widgets inside an
-    # st.form only rerun the script on submit. st.text_input also only
-    # commits on blur/Enter, not per keystroke, so it can't drive live
-    # suggestions either. st_searchbox is a component built for exactly
-    # this: it calls the search callback on every keystroke (debounced) and
-    # renders a live dropdown, with no need to press Enter or tab away.
-    seasons = _seasons_multiselect("stat_seasons_multiselect", "stat_seasons_input")
-    search_players = _make_search_players("stat_seasons_input")
-
-    query = st_searchbox(
-        search_players,
-        key="player_searchbox",
-        placeholder="Player Search",
-        default_use_searchterm=True,
-        clear_on_submit=False,
-    ) or ""
-
-    compare_mode = st.toggle(
-        "Compare Players",
-        key="compare_mode_toggle",
-        help="Add up to 2 more players to compare against your search above.",
+    st.markdown(
+        _flatten_html(
+            """
+            <div class="section-heading">
+              <h2>Player Analytics</h2>
+              <p>
+                Search an NFL player to explore game logs,
+                fantasy production, usage trends, stat splits,
+                and side-by-side comparisons.
+              </p>
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
     )
 
-    # The main search box doubles as Player 1 in compare mode, so only 2 more
-    # slots are needed to match the previous 3-player compare tab.
-    compare_names = (query,) if query else ()
-    if compare_mode:
-        st.caption("Add at least one more player to compare.")
-        compare_cols = st.columns(2)
-        for i, col in enumerate(compare_cols):
-            with col:
-                selection = st_searchbox(
+    search_players = _make_search_players(
+        "stat_seasons_input"
+    )
+
+    with st.container(border=True):
+        st.markdown("### Find a Player")
+        st.caption(
+            "Choose one or more seasons and search for an NFL player."
+        )
+
+        season_col, player_col = st.columns(
+            [1.1, 2.4],            
+            vertical_alignment="bottom",
+)
+
+        with season_col:
+            with st.container():
+                seasons = _seasons_multiselect(
+                    "stat_seasons_multiselect",
+                    "stat_seasons_input",
+        )
+
+        with player_col:
+            with st.container():
+                query = st_searchbox(
                     search_players,
-                    key=f"compare_searchbox_{i}",
-                    placeholder=f"Player {i + 2}",
+                    key="player_searchbox",
+                    placeholder="Search by player name",
                     default_use_searchterm=True,
                     clear_on_submit=False,
-                ) or ""
-                if selection:
-                    compare_names += (selection,)
+        ) or ""
 
-    with st.form("stat_search_form"):
-        split_label, split_key, split_value = _split_selectbox("stat_split_select")
-        submitted = st.form_submit_button("Compare" if compare_mode else "Search")
+        with st.expander(
+            "Comparison and game filters",
+            expanded=False,
+        ):
+            compare_mode = st.toggle(
+                "Compare Players",
+                key="compare_mode_toggle",
+                help=(
+                    "Add up to two more players to compare "
+                    "against the first player."
+                ),
+            )
+
+            compare_names = (query,) if query else ()
+
+            if compare_mode:
+                st.caption(
+                    "Add at least one more player to build "
+                    "a side-by-side comparison."
+                )
+
+                compare_cols = st.columns(2)
+
+                for i, col in enumerate(compare_cols):
+                    with col:
+                        selection = st_searchbox(
+                            search_players,
+                            key=f"compare_searchbox_{i}",
+                            placeholder=f"Player {i + 2}",
+                            default_use_searchterm=True,
+                            clear_on_submit=False,
+                        ) or ""
+
+                        if selection:
+                            compare_names += (selection,)
+
+            split_label, split_key, split_value = (
+                _split_selectbox(
+                    "stat_split_select"
+                )
+            )
+
+        submitted = st.button(
+            "Compare Players"
+            if compare_mode
+            else "View Player Analytics",
+            key="stat_search_submit",
+        )
 
     # The chart pickers rendered inside render_result (Chart split, Chart
     # stat) are plain widgets outside this form, so touching them triggers
@@ -1918,8 +2163,79 @@ def run_stat_search():
 
                 st.session_state["stat_search_answer"] = answer
 
-    if "stat_search_answer" in st.session_state:
-        render_result(st.session_state["stat_search_answer"])
+        if "stat_search_answer" in st.session_state:
+            st.divider()
+
+            render_result(
+                st.session_state["stat_search_answer"]
+            )
+
+    else:
+        st.markdown("### What You Can Explore")
+
+        feature_col1, feature_col2, feature_col3 = st.columns(
+            3,
+            gap="large",
+        )
+
+        with feature_col1:
+            st.markdown(
+                _flatten_html(
+                    """
+                    <div class="feature-card">
+                      <div class="feature-card-title">
+                        Player Trends
+                      </div>
+
+                      <div class="feature-card-text">
+                        Review weekly fantasy points, rolling
+                        averages, snap usage, and detailed
+                        game-by-game performance.
+                      </div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+
+        with feature_col2:
+            st.markdown(
+                _flatten_html(
+                    """
+                    <div class="feature-card">
+                      <div class="feature-card-title">
+                        Player Comparison
+                      </div>
+
+                      <div class="feature-card-text">
+                        Compare up to three players using fantasy
+                        production and position-specific statistics.
+                      </div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
+
+        with feature_col3:
+            st.markdown(
+                _flatten_html(
+                    """
+                    <div class="feature-card">
+                      <div class="feature-card-title">
+                        Situational Splits
+                      </div>
+
+                      <div class="feature-card-text">
+                        Explore home and away results, weather,
+                        surface, game outcome, opponent group,
+                        and other performance splits.
+                      </div>
+                    </div>
+                    """
+                ),
+                unsafe_allow_html=True,
+            )
 
 
 def run_sleeper():
@@ -2514,9 +2830,13 @@ def run_draft_optimizer():
 # clipped once the page grows tall (e.g. a Sleeper account with several
 # leagues) - the hidden panels bleed through below the active one. A manual
 # selector sidesteps that by only ever calling the active section's function.
-available_sections = ["Sleeper"]
+available_sections = ["Sleeper League"]
+
 if NFLREADPY_IMPORT_ERROR is None:
-    available_sections.insert(0, "Stat Search")
+    available_sections.insert(
+        0,
+        "Player Analytics",
+    )
 
 selected_section = st.radio(
     "Section",
@@ -2525,7 +2845,7 @@ selected_section = st.radio(
     label_visibility="collapsed",
 )
 
-if selected_section == "Stat Search":
+if selected_section == "Player Analytics":
     run_stat_search()
 else:
     run_sleeper()
