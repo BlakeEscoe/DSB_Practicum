@@ -85,6 +85,14 @@ st.markdown(
       }
 
       /* Hero section */
+      .st-key-hero_band {
+        background: linear-gradient(135deg, rgba(52, 211, 153, 0.14) 0%, rgba(124, 58, 237, 0.14) 100%);
+        border-radius: 20px;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        padding: 0.5rem 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+
       .app-hero {
         padding: 1.25rem 0 1.8rem;
       }
@@ -164,6 +172,49 @@ st.markdown(
         font-size: 0.9rem;
         line-height: 1.55;
         opacity: 0.7;
+      }
+
+      /* Stat tiles (Projection Details): one card per KPI instead of
+         st.metric stacked full-width. */
+      .stat-tile-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+        margin: 0.6rem 0 0.75rem;
+      }
+
+      .stat-tile {
+        flex: 1 1 150px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 14px;
+        background: rgba(148, 163, 184, 0.06);
+        padding: 1rem 1.2rem;
+      }
+
+      .stat-tile-value {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1.15;
+        font-variant-numeric: proportional-nums;
+      }
+
+      .stat-tile-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+      }
+
+      .stat-tile-highlight .stat-tile-value {
+        color: #34d399;
+      }
+
+      .stat-tile-trend-up .stat-tile-value {
+        color: #0ca30c;
+      }
+
+      .stat-tile-trend-down .stat-tile-value {
+        color: #dc2626;
       }
 
       /* Native Streamlit containers */
@@ -585,42 +636,43 @@ components.html(
     height=0,
 )
 
-logo_col, title_col = st.columns(
-    [1, 7],
-    vertical_alignment="center",
-)
-
-with logo_col:
-    st.markdown("<div style='padding-top:80px'></div>", unsafe_allow_html=True)
-
-    st.image(
-        "assets/fantasy_pathfinder_logo.png",
-        width=150,
+with st.container(key="hero_band", border=True):
+    logo_col, title_col = st.columns(
+        [1, 7],
+        vertical_alignment="center",
     )
 
-with title_col:
-    st.markdown(
-        _flatten_html(
-            """
-            <div class="app-hero">
+    with logo_col:
+        st.markdown("<div style='padding-top:80px'></div>", unsafe_allow_html=True)
 
-                <div class="hero-badge">
-                    Fantasy Football Analytics
+        st.image(
+            "assets/fantasy_pathfinder_logo.png",
+            width=150,
+        )
+
+    with title_col:
+        st.markdown(
+            _flatten_html(
+                """
+                <div class="app-hero">
+
+                    <div class="hero-badge">
+                        Fantasy Football Analytics
+                    </div>
+
+                    <h1>Fantasy Pathfinder</h1>
+
+                    <p>
+                        Explore player performance, compare fantasy options,
+                        analyze fantasy trends, and manage your Sleeper leagues
+                        in one place.
+                    </p>
+
                 </div>
-
-                <h1>Fantasy Pathfinder</h1>
-
-                <p>
-                    Explore player performance, compare fantasy options,
-                    analyze fantasy trends, and manage your Sleeper leagues
-                    in one place.
-                </p>
-
-            </div>
-            """
-        ),
-        unsafe_allow_html=True,
-    )
+                """
+            ),
+            unsafe_allow_html=True,
+        )
 # --- ESPN-style stat splits -------------------------------------------------
 #
 # The player-week stats dataset only carries raw counting stats (completions,
@@ -1883,6 +1935,35 @@ def _make_search_players(seasons_state_key: str):
     return _search_players
 
 
+def render_projection_tiles(projection: dict[str, Any]) -> str:
+    direction = (projection.get("direction") or "").lower()
+    trend_icon = {"up": "▲", "down": "▼"}.get(direction, "→")
+    trend_class = f"stat-tile-trend-{direction}" if direction in ("up", "down") else ""
+
+    tiles = [
+        ("stat-tile-highlight", "Projection", projection.get("projection")),
+        ("", "Avg last 3 games", projection.get("recent_average")),
+        ("", "Avg last 6 games", projection.get("sample_average")),
+        (trend_class, "Trend", f"{trend_icon} {direction.capitalize() or 'Flat'}"),
+    ]
+
+    tiles_html = "".join(
+        f"""
+        <div class="stat-tile {cls}">
+          <div class="stat-tile-value">{html.escape(str(value))}</div>
+          <div class="stat-tile-label">{html.escape(label)}</div>
+        </div>
+        """
+        for cls, label, value in tiles
+    )
+
+    return _flatten_html(f"""
+    <div class="stat-tile-row">
+      {tiles_html}
+    </div>
+    """)
+
+
 def render_result(answer: dict[str, any]) -> None:
     if not answer:
         st.warning("No result returned.")
@@ -1894,11 +1975,8 @@ def render_result(answer: dict[str, any]) -> None:
     projection = answer.get("projection")
     if projection:
         with st.expander("Projection Details", expanded=True):
-            st.metric("Projection", projection.get("projection"))
-            st.metric("Avg Over Last 3 Games", projection.get("recent_average"))
-            st.metric("Avg Over Last 6 Games", projection.get("sample_average"))
-            st.metric("Trend", (projection.get("direction") or "").capitalize())
-            st.write(projection.get("method"))
+            st.markdown(render_projection_tiles(projection), unsafe_allow_html=True)
+            st.caption(projection.get("method"))
 
     game_log = answer.get("game_log")
     has_game_log = bool(game_log and game_log.get("rows"))
