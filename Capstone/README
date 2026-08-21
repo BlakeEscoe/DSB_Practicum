@@ -2,10 +2,6 @@
 
 A centralized fantasy football analytics platform built to replace the fragmented mix of third-party sites, spreadsheets, and rankings that fantasy managers currently juggle each week.
 
-Team: Dezi Harris, Andrew Olejniczak, Landon Panganiban, Blake Rogers, Khalid Syed, Julia Woeste
-Wayne State University, DSB 7500 Applied Analytics Practicum, August 2026
-
-**[Live App Demo]()** | **[Project Website]()**
 
 ## Problem
 
@@ -20,7 +16,7 @@ Fantasy football players rely on scattered tools, one site for rankings, another
 - **Trade optimizer**: surfaces mutually beneficial trades and high-probability, position-targeted trade packages across a league
 - **Draft optimizer**: ranks available players by model-projected value and updates live as picks come off the board
 
-## My Role: Machine Learning
+
 
 I 
 ## My Role: Machine Learning and Stats Search
