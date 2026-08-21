@@ -1,0 +1,60 @@
+# Fantasy Pathfinder
+
+A centralized fantasy football analytics platform built to replace the fragmented mix of third-party sites, spreadsheets, and rankings that fantasy managers currently juggle each week.
+
+Team: Dezi Harris, Andrew Olejniczak, Landon Panganiban, Blake Rogers, Khalid Syed, Julia Woeste
+Wayne State University, DSB 7500 Applied Analytics Practicum, August 2026
+
+**[Live App Demo]()** | **[Project Website]()**
+
+## Problem
+
+Fantasy football players rely on scattered tools, one site for rankings, another for trade calculators, a spreadsheet for tracking, to make weekly lineup, trade, and draft decisions. Interviews with active fantasy football players confirmed the gap: users wanted point projections that account for more than raw box-score stats (travel, altitude, weather), a trade tool that evaluates full roster context instead of a single swap, and a single place to manage more than one league at once.
+
+## What It Does
+
+- **Player search and comparison**: look up historical stat splits (home/away, indoor/outdoor, day of week, weather) and compare up to three players side by side
+- **Sleeper integration**: connect a Sleeper account by username (read-only, no credentials required) to pull leagues, rosters, and matchups directly into the app
+- **Fantasy point projections**: separate Random Forest models for QB, RB, WR, TE, K, and team defense, trained on over two decades of NFL data
+- **Lineup optimizer**: generates the highest-projected starting lineup for every team in a connected league using a greedy optimization approach
+- **Trade optimizer**: surfaces mutually beneficial trades and high-probability, position-targeted trade packages across a league
+- **Draft optimizer**: ranks available players by model-projected value and updates live as picks come off the board
+
+## My Role: Machine Learning
+
+I 
+## My Role: Machine Learning and Stats Search
+
+I led the machine learning component of the project and also worked on the stats search feature. My contributions included:
+
+- Building the Random Forest models used to project fantasy points at each position (QB, RB, WR, TE, K, defense)
+- Feature engineering from player performance metrics, recent-game trends, rolling averages, season and career statistics, opponent defensive performance, betting lines (spread, over/under), and weather conditions
+- Working with over two decades of historical NFL data pulled via `nflreadpy`, joined with player and team identifiers to build a clean training set
+- Evaluating and tuning models per position group to account for the different statistical profiles across positions
+- Building the stats search feature, allowing users to look up player performance under specific situational filters (home/away, indoor/outdoor, day of week, weather) and compare up to three players side by side
+
+## Tech Stack
+
+- **Modeling**: Python, scikit-learn (Random Forest), Pandas, Polars, NumPy
+- **App**: Streamlit
+- **Visualization**: Altair
+- **Data**: `nflreadpy` (NFL play-by-play, player, and team data), Sleeper API
+- **Tooling**: Git/GitHub for version control, VS Code
+
+## Validation
+
+We tested the app with active fantasy football players (a mix of experienced and casual). Findings:
+- Every respondent currently relies on gut instinct plus independent research for lineup and trade decisions
+- Of respondents who connected a Sleeper account, the Draft Optimizer ranked as the most valuable feature, followed by the Trade Evaluator and Lineup Optimizer
+- Feedback for next iteration: support more complex trades (1-for-3, 2-for-4), add a head-to-head matchup view, and add a general "players likely to have a big week" view for users without a connected Sleeper league
+
+## Known Limitations and Next Steps
+
+- Rookie players have no NFL history, so they currently receive no projection. A next step is incorporating college stats, combine results, and draft position to estimate rookie performance.
+- Trade evaluation is currently limited to 1-for-1 and 2-for-2 swaps.
+- Dynasty league support (rookie-only drafts) depends on solving the rookie projection gap first.
+
+## Repository Structure
+
+- `Capstone/` — core project code
+- `src/nflreadpy/` — NFL data loading utilities
